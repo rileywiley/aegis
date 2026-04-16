@@ -18,11 +18,8 @@ def _current_time() -> str:
 
 
 _STUB_PAGES = {
-    "/readiness": ("readiness.html", "Readiness"),
-    "/ask": ("chat.html", "Ask Aegis"),
     "/admin": ("admin.html", "Admin"),
     "/search": ("search.html", "Search"),
-    "/respond": ("respond.html", "Respond"),
 }
 
 

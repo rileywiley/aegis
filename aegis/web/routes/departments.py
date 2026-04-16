@@ -17,6 +17,7 @@ from aegis.db.repositories import (
     get_department_workstreams,
     get_departments,
 )
+from aegis.intelligence.sentiment import get_department_sentiment
 from aegis.web import templates
 
 router = APIRouter()
@@ -61,12 +62,16 @@ async def departments_list(
         else:
             health = "green"
 
+        # Fetch sentiment aggregation for this department
+        sentiment = await get_department_sentiment(session, dept.id)
+
         dept_cards.append({
             "department": dept,
             "member_count": len(members),
             "head_name": head_name,
             "open_items": open_items,
             "health": health,
+            "sentiment": sentiment,
         })
 
     # Sort by member count descending
@@ -108,6 +113,7 @@ async def department_detail(
         if head:
             head_name = head.name
 
+    sentiment = await get_department_sentiment(session, dept.id)
     tz = _local_tz()
 
     return templates.TemplateResponse(
@@ -119,6 +125,7 @@ async def department_detail(
             "open_items": open_items,
             "workstreams": workstreams,
             "head_name": head_name,
+            "sentiment": sentiment,
             "current_time": _current_time(),
             "tz": tz,
         },

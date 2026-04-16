@@ -1,0 +1,23 @@
+<!-- HTMX partial: past chat sessions list -->
+{% if sessions %}
+<ul class="divide-y divide-gray-100">
+  {% for s in sessions %}
+  <li>
+    <a href="/ask?session_id={{ s.id }}"
+       class="block px-4 py-3 hover:bg-gray-50 transition-colors">
+      <p class="text-sm text-gray-800 truncate">{{ s.preview }}</p>
+      <div class="mt-1 flex items-center gap-2 text-xs text-gray-400">
+        <span>{{ s.message_count }} message{{ 's' if s.message_count != 1 else '' }}</span>
+        {% if s.last_active %}
+        <span>{{ s.last_active.strftime('%b %-d, %-I:%M %p') if s.last_active else '' }}</span>
+        {% endif %}
+      </div>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="px-4 py-8 text-center">
+  <p class="text-xs text-gray-400">No past conversations yet.</p>
+</div>
+{% endif %}

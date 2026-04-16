@@ -75,6 +75,12 @@
           Excluded
         </span>
         {% endif %}
+
+        {% if meeting_briefs is defined and meeting_briefs.get(meeting.id) %}
+        <span class="inline-flex items-center rounded-full bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700">
+          Prep Brief
+        </span>
+        {% endif %}
       </div>
 
       <!-- Arrow -->

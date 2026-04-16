@@ -162,10 +162,25 @@ async def lifespan(app: FastAPI):
         id="processing_cycle",
         replace_existing=True,
     )
+
+    # Dashboard cache refresh every 15 min
+    from aegis.web.routes.dashboard import refresh_dashboard_cache
+    scheduler.add_job(
+        refresh_dashboard_cache,
+        "interval",
+        seconds=settings.dashboard_cache_ttl_seconds,
+        id="dashboard_cache_refresh",
+        replace_existing=True,
+    )
+
+    # Intelligence jobs (briefings, meeting prep notifications)
+    from aegis.intelligence.scheduler import register_intelligence_jobs
+    register_intelligence_jobs(scheduler)
+
     scheduler.start()
     app.state.scheduler = scheduler
 
-    logger.info("Aegis ready — pollers and processing cycle running")
+    logger.info("Aegis ready — pollers, processing cycle, and intelligence jobs running")
     yield
 
     # ── Shutdown ─────────────────────────────────────────
@@ -189,8 +204,11 @@ from aegis.web.routes.org_chart import router as org_chart_router  # noqa: E402
 from aegis.web.routes.workstreams import router as workstreams_router  # noqa: E402
 from aegis.web.routes.actions import router as actions_router  # noqa: E402
 from aegis.web.routes.departments import router as departments_router  # noqa: E402
+from aegis.web.routes.readiness import router as readiness_router  # noqa: E402
 from aegis.web.routes.emails import router as emails_router  # noqa: E402
 from aegis.web.routes.asks import router as asks_router  # noqa: E402
+from aegis.web.routes.respond import router as respond_router  # noqa: E402
+from aegis.web.routes.chat import router as chat_router  # noqa: E402
 from aegis.web.routes.stubs import router as stubs_router  # noqa: E402
 
 app.include_router(dashboard_router)
@@ -200,6 +218,9 @@ app.include_router(org_chart_router)
 app.include_router(workstreams_router)
 app.include_router(actions_router)
 app.include_router(departments_router)
+app.include_router(readiness_router)
 app.include_router(emails_router)
 app.include_router(asks_router)
+app.include_router(respond_router)
+app.include_router(chat_router)
 app.include_router(stubs_router)

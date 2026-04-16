@@ -1,7 +1,8 @@
 """Readiness scoring — workload balance measurement per person.
 
-This is a Phase 2 stub. Full computation (including email_asks, chat_asks,
-incoming velocity trend, and dashboard cache storage) will be enhanced in Phase 4.
+Computes a 0-100 busyness score per person based on open items, blocking count,
+incoming velocity, and workstream count. All components are normalized 0-1
+relative to peers.
 """
 
 import logging
@@ -169,9 +170,14 @@ async def compute_readiness(session: AsyncSession, person_id: int) -> ReadinessS
 
     score = max(0, min(100, int(round(raw_score))))
 
-    # Trend: stub for Phase 2 -- always "flat"
-    # Phase 4 will compare current score vs 14-day average
-    trend: Literal["up", "down", "flat"] = "flat"
+    # Trend: compare current velocity to baseline
+    # Rising velocity (>1.5) means workload increasing, falling (<0.7) decreasing
+    if velocity > 1.5:
+        trend: Literal["up", "down", "flat"] = "up"
+    elif velocity < 0.7 and open_items < 5:
+        trend = "down"
+    else:
+        trend = "flat"
 
     return ReadinessScore(
         person_id=person_id,
@@ -190,12 +196,16 @@ async def compute_all_readiness(
 ) -> list[ReadinessScore]:
     """Compute readiness scores for multiple people.
 
-    If person_ids is None, computes for all non-external people.
+    If person_ids is None, computes for all non-external people
+    with interaction_count > 0.
     """
     from aegis.db.models import Person
 
     if person_ids is None:
-        stmt = select(Person.id).where(Person.is_external.is_(False))
+        stmt = select(Person.id).where(
+            Person.is_external.is_(False),
+            Person.interaction_count > 0,
+        )
         result = await session.execute(stmt)
         person_ids = list(result.scalars().all())
 
@@ -205,3 +215,56 @@ async def compute_all_readiness(
         scores.append(score)
 
     return scores
+
+
+async def get_readiness_detail(
+    session: AsyncSession, person_id: int
+) -> dict:
+    """Get detailed breakdown of open items for a person.
+
+    Returns dict with lists of action_items, email_asks, and chat_asks.
+    """
+    # Open action items
+    ai_stmt = (
+        select(ActionItem)
+        .where(
+            ActionItem.assignee_id == person_id,
+            ActionItem.status.in_(["open", "in_progress"]),
+        )
+        .order_by(ActionItem.created.desc())
+        .limit(20)
+    )
+    ai_result = await session.execute(ai_stmt)
+    action_items = list(ai_result.scalars().all())
+
+    # Open email asks targeting this person
+    ea_stmt = (
+        select(EmailAsk)
+        .where(
+            EmailAsk.target_id == person_id,
+            EmailAsk.status.in_(["open", "in_progress"]),
+        )
+        .order_by(EmailAsk.created.desc())
+        .limit(20)
+    )
+    ea_result = await session.execute(ea_stmt)
+    email_asks = list(ea_result.scalars().all())
+
+    # Open chat asks targeting this person
+    ca_stmt = (
+        select(ChatAsk)
+        .where(
+            ChatAsk.target_id == person_id,
+            ChatAsk.status.in_(["open", "in_progress"]),
+        )
+        .order_by(ChatAsk.created.desc())
+        .limit(20)
+    )
+    ca_result = await session.execute(ca_stmt)
+    chat_asks = list(ca_result.scalars().all())
+
+    return {
+        "action_items": action_items,
+        "email_asks": email_asks,
+        "chat_asks": chat_asks,
+    }

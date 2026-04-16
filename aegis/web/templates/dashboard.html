@@ -4,7 +4,7 @@
 {% block page_title %}Command Center{% endblock %}
 
 {% block content %}
-<div class="space-y-8">
+<div x-data="{ chatOpen: false, attentionTab: 'decisions' }" class="space-y-6">
 
   <!-- Date header -->
   <div>
@@ -12,10 +12,69 @@
     <p class="mt-1 text-sm text-gray-500">Your daily operations hub</p>
   </div>
 
-  <!-- Grid layout -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- ZONE 1: Active Workstreams (horizontal scroll)      -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-100 px-6 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+          </svg>
+          <h3 class="text-base font-semibold text-gray-900">Active Workstreams</h3>
+          {% if workstream_cards %}
+          <span class="ml-1 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+            {{ workstream_cards|length }}
+          </span>
+          {% endif %}
+        </div>
+        <a href="/workstreams" class="text-xs text-gray-400 hover:text-gray-600 transition-colors">View all</a>
+      </div>
+    </div>
+    {% if workstream_cards %}
+    <div class="px-6 py-4 overflow-x-auto">
+      <div class="flex gap-4 min-w-max">
+        {% for ws in workstream_cards %}
+        <a href="/workstreams/{{ ws.id }}"
+           class="flex-shrink-0 w-64 rounded-lg border border-gray-200 bg-gray-50 p-4 hover:bg-white hover:shadow-sm transition-all">
+          <div class="flex items-start justify-between">
+            <h4 class="text-sm font-semibold text-gray-900 truncate max-w-[180px]">{{ ws.name }}</h4>
+            {% if ws.pinned %}
+            <svg class="h-4 w-4 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+            </svg>
+            {% endif %}
+          </div>
+          {% if ws.description %}
+          <p class="mt-1 text-xs text-gray-500 line-clamp-2">{{ ws.description }}</p>
+          {% endif %}
+          <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
+            <span>{{ ws.item_count }} item{{ 's' if ws.item_count != 1 else '' }}</span>
+            <span class="inline-flex items-center rounded-full px-1.5 py-0.5
+              {% if ws.status == 'active' %}bg-green-50 text-green-600
+              {% else %}bg-gray-100 text-gray-500{% endif %}">
+              {{ ws.status }}
+            </span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="px-6 py-8 text-center">
+      <p class="text-sm text-gray-400">No active workstreams yet.</p>
+      <a href="/workstreams" class="mt-2 inline-block text-xs text-aegis-600 hover:text-aegis-700">Create a workstream</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Main grid -->
   <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-    <!-- Today's Meetings — spans 2 cols on xl -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- ZONE 3: Today's Meetings — spans 2 cols on xl      -->
+    <!-- ═══════════════════════════════════════════════════ -->
     <div class="xl:col-span-2">
       <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
@@ -43,10 +102,12 @@
       </div>
     </div>
 
-    <!-- Right column — placeholder panels -->
+    <!-- Right column -->
     <div class="space-y-6">
 
-      <!-- Requires Attention -->
+      <!-- ═══════════════════════════════════════════════ -->
+      <!-- ZONE 2: Requires Attention (tabbed)             -->
+      <!-- ═══════════════════════════════════════════════ -->
       <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="border-b border-gray-100 px-6 py-4">
           <div class="flex items-center gap-2">
@@ -56,13 +117,111 @@
             <h3 class="text-base font-semibold text-gray-900">Requires Attention</h3>
           </div>
         </div>
-        <div class="px-6 py-8 text-center">
-          <p class="text-sm text-gray-400">Decisions, pending asks, and stale items will appear here.</p>
-          <p class="mt-1 text-xs text-gray-300">Coming in Phase 3</p>
+
+        <!-- Tabs -->
+        <div class="border-b border-gray-100 px-6">
+          <nav class="flex gap-4 -mb-px">
+            <button @click="attentionTab = 'decisions'"
+                    :class="attentionTab === 'decisions' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
+                    class="border-b-2 pb-2 pt-3 text-xs font-medium transition-colors">
+              Decisions
+              {% if decisions_count %}<span class="ml-1 rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[10px]">{{ decisions_count }}</span>{% endif %}
+            </button>
+            <button @click="attentionTab = 'awaiting'"
+                    :class="attentionTab === 'awaiting' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
+                    class="border-b-2 pb-2 pt-3 text-xs font-medium transition-colors">
+              Awaiting
+              {% if awaiting_count %}<span class="ml-1 rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 text-[10px]">{{ awaiting_count }}</span>{% endif %}
+            </button>
+            <button @click="attentionTab = 'stale'"
+                    :class="attentionTab === 'stale' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
+                    class="border-b-2 pb-2 pt-3 text-xs font-medium transition-colors">
+              Stale
+              {% if stale_count %}<span class="ml-1 rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px]">{{ stale_count }}</span>{% endif %}
+            </button>
+          </nav>
+        </div>
+
+        <!-- Tab content -->
+        <div class="max-h-64 overflow-y-auto">
+
+          <!-- Decisions tab -->
+          <div x-show="attentionTab === 'decisions'">
+            {% if decisions %}
+            <ul class="divide-y divide-gray-50">
+              {% for d in decisions[:8] %}
+              <li class="px-6 py-3">
+                <p class="text-sm text-gray-800 line-clamp-2">{{ d.description }}</p>
+                <p class="mt-1 text-xs text-gray-400">
+                  {% if d.datetime %}{{ d.datetime[:10] }}{% endif %}
+                  {% if d.source_meeting_id %} — <a href="/meetings/{{ d.source_meeting_id }}" class="text-aegis-600 hover:underline">Meeting</a>{% endif %}
+                </p>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-6 py-6 text-center">
+              <p class="text-xs text-gray-400">No pending decisions.</p>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Awaiting tab -->
+          <div x-show="attentionTab === 'awaiting'" x-cloak>
+            {% if awaiting %}
+            <ul class="divide-y divide-gray-50">
+              {% for a in awaiting[:8] %}
+              <li class="px-6 py-3">
+                <div class="flex items-start justify-between gap-2">
+                  <p class="text-sm text-gray-800 line-clamp-2">{{ a.description }}</p>
+                  <span class="shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium
+                    {% if a.urgency == 'high' %}bg-red-50 text-red-600
+                    {% elif a.urgency == 'medium' %}bg-amber-50 text-amber-600
+                    {% else %}bg-gray-100 text-gray-500{% endif %}">
+                    {{ a.urgency }}
+                  </span>
+                </div>
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ a.source }} ask
+                  {% if a.created %} — {{ a.created[:10] }}{% endif %}
+                </p>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-6 py-6 text-center">
+              <p class="text-xs text-gray-400">No pending asks awaiting your response.</p>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Stale tab -->
+          <div x-show="attentionTab === 'stale'" x-cloak>
+            {% if stale_items %}
+            <ul class="divide-y divide-gray-50">
+              {% for s in stale_items[:8] %}
+              <li class="px-6 py-3">
+                <p class="text-sm text-gray-800 line-clamp-2">{{ s.description }}</p>
+                <p class="mt-1 text-xs text-gray-400">
+                  Since {{ s.created[:10] if s.created else 'unknown' }}
+                  {% if s.deadline %} — Deadline: {{ s.deadline }}{% endif %}
+                </p>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <div class="px-6 py-6 text-center">
+              <p class="text-xs text-gray-400">No stale action items. Nice work!</p>
+            </div>
+            {% endif %}
+          </div>
+
         </div>
       </div>
 
-      <!-- Drafts -->
+      <!-- ═══════════════════════════════════════════════ -->
+      <!-- ZONE 4: Drafts Ready for Review                 -->
+      <!-- ═══════════════════════════════════════════════ -->
       <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="border-b border-gray-100 px-6 py-4">
           <div class="flex items-center gap-2">
@@ -70,31 +229,145 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
             </svg>
             <h3 class="text-base font-semibold text-gray-900">Drafts</h3>
+            {% if drafts_count %}
+            <span class="ml-1 inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+              {{ drafts_count }}
+            </span>
+            {% endif %}
           </div>
         </div>
+        {% if drafts %}
+        <ul class="divide-y divide-gray-50 max-h-64 overflow-y-auto">
+          {% for d in drafts %}
+          <li class="px-6 py-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium
+                    {% if d.draft_type == 'nudge' %}bg-amber-50 text-amber-600
+                    {% elif d.draft_type == 'recap' %}bg-blue-50 text-blue-600
+                    {% elif d.draft_type == 'response' %}bg-green-50 text-green-600
+                    {% else %}bg-gray-100 text-gray-500{% endif %}">
+                    {{ d.draft_type }}
+                  </span>
+                  <span class="text-[10px] text-gray-400">via {{ d.channel }}</span>
+                </div>
+                {% if d.subject %}
+                <p class="mt-1 text-sm font-medium text-gray-800 truncate">{{ d.subject }}</p>
+                {% endif %}
+                <p class="mt-0.5 text-xs text-gray-500 line-clamp-2">{{ d.body_preview }}</p>
+                {% if d.recipient_id and person_names.get(d.recipient_id) %}
+                <p class="mt-0.5 text-xs text-gray-400">To: {{ person_names[d.recipient_id] }}</p>
+                {% endif %}
+              </div>
+              <div class="flex shrink-0 gap-1">
+                <button hx-post="/api/drafts/{{ d.id }}/send" hx-swap="outerHTML" hx-target="closest li"
+                        class="rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors">
+                  Send
+                </button>
+                <button hx-post="/api/drafts/{{ d.id }}/discard" hx-swap="outerHTML" hx-target="closest li"
+                        class="rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors">
+                  Discard
+                </button>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
         <div class="px-6 py-8 text-center">
-          <p class="text-sm text-gray-400">Draft nudges, recaps, and responses will appear here.</p>
-          <p class="mt-1 text-xs text-gray-300">Coming in Phase 4</p>
+          <p class="text-sm text-gray-400">No drafts pending review.</p>
         </div>
+        {% endif %}
       </div>
 
     </div>
 
   </div>
 
-  <!-- Active Workstreams placeholder -->
-  <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
-    <div class="border-b border-gray-100 px-6 py-4">
-      <div class="flex items-center gap-2">
-        <svg class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
-        </svg>
-        <h3 class="text-base font-semibold text-gray-900">Active Workstreams</h3>
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- ZONE 5: "Next Up" Floating Widget (bottom-right)    -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  {% if next_meeting %}
+  <div class="fixed bottom-20 right-6 z-40" x-data="{ dismissed: false }" x-show="!dismissed">
+    <div class="rounded-xl border border-gray-200 bg-white shadow-lg p-4 w-72">
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-2">
+          <div class="h-2 w-2 rounded-full bg-aegis-500 animate-pulse"></div>
+          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Next Up</span>
+        </div>
+        <button @click="dismissed = true" class="text-gray-300 hover:text-gray-500">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
+      <a href="/meetings/{{ next_meeting.id }}" class="block mt-2 group">
+        <p class="text-sm font-semibold text-gray-900 group-hover:text-aegis-600 transition-colors truncate">
+          {{ next_meeting.title }}
+        </p>
+        <div class="mt-1 flex items-center gap-3 text-xs text-gray-500">
+          <span>{{ next_meeting.start_time.astimezone(tz).strftime('%-I:%M %p') }}</span>
+          {% if next_meeting.duration %}
+          <span>{{ next_meeting.duration }} min</span>
+          {% endif %}
+        </div>
+      </a>
+      {% if meeting_briefs.get(next_meeting.id) %}
+      <a href="/meetings/{{ next_meeting.id }}#prep"
+         class="mt-3 block rounded-lg bg-aegis-50 px-3 py-1.5 text-center text-xs font-medium text-aegis-700 hover:bg-aegis-100 transition-colors">
+        View Prep Brief
+      </a>
+      {% endif %}
     </div>
-    <div class="px-6 py-8 text-center">
-      <p class="text-sm text-gray-400">Pinned workstream cards with status and sentiment will appear here.</p>
-      <p class="mt-1 text-xs text-gray-300">Coming in Phase 2</p>
+  </div>
+  {% endif %}
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- ZONE 6: "Ask Aegis" Chat Sidebar (togglable)        -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <button @click="chatOpen = !chatOpen"
+          class="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-aegis-600 text-white shadow-lg hover:bg-aegis-700 transition-colors">
+    <svg x-show="!chatOpen" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+    </svg>
+    <svg x-show="chatOpen" x-cloak class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  </button>
+
+  <!-- Chat panel -->
+  <div x-show="chatOpen" x-cloak
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0 translate-y-4"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100 translate-y-0"
+       x-transition:leave-end="opacity-0 translate-y-4"
+       class="fixed bottom-20 right-6 z-40 w-96 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+    <div class="border-b border-gray-100 px-4 py-3 flex items-center gap-2">
+      <div class="h-2 w-2 rounded-full bg-green-400"></div>
+      <span class="text-sm font-semibold text-gray-900">Ask Aegis</span>
+      <a href="/ask" class="ml-auto text-xs text-aegis-600 hover:text-aegis-700">Full chat</a>
+    </div>
+    <div id="chat-widget-messages" class="h-64 overflow-y-auto px-4 py-3">
+      <p class="text-xs text-gray-400 italic">Ask a quick question about your schedule, emails, or workstreams.</p>
+    </div>
+    <div class="border-t border-gray-100 px-4 py-3">
+      <form hx-get="/api/chat-widget"
+            hx-target="#chat-widget-messages"
+            hx-swap="innerHTML"
+            class="flex gap-2">
+        <input type="text" name="q" placeholder="Ask something..."
+               class="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm focus:border-aegis-500 focus:ring-1 focus:ring-aegis-500"
+               onkeydown="if(event.key==='Enter'){event.preventDefault(); this.closest('form').requestSubmit();}">
+        <button type="submit"
+                class="rounded-lg bg-aegis-600 px-3 py-2 text-white text-sm hover:bg-aegis-700 transition-colors">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+        </button>
+      </form>
     </div>
   </div>
 

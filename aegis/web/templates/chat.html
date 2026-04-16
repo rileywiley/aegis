@@ -4,19 +4,147 @@
 {% block page_title %}Ask Aegis{% endblock %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center py-24">
-  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
-    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
-      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-      </svg>
+<div class="flex h-[calc(100vh-10rem)] gap-4" x-data="{ showSessions: false }">
+
+  <!-- Session sidebar (togglable) -->
+  <div x-show="showSessions" x-cloak
+       class="w-72 shrink-0 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+    <div class="border-b border-gray-100 px-4 py-3 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-gray-900">Past Conversations</h3>
+      <button @click="showSessions = false" class="text-gray-400 hover:text-gray-600">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </div>
-    <h2 class="mt-6 text-lg font-semibold text-gray-900">Ask Aegis</h2>
-    <p class="mt-2 text-sm text-gray-500">RAG-powered chat assistant with full context from your knowledge base.</p>
-    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
-      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
-      <span class="text-xs font-medium text-aegis-700">Coming in Phase 4</span>
+    <div class="flex-1 overflow-y-auto"
+         hx-get="/ask/sessions" hx-trigger="load" hx-swap="innerHTML">
+      <div class="px-4 py-8 text-center">
+        <p class="text-xs text-gray-400">Loading sessions...</p>
+      </div>
+    </div>
+    <div class="border-t border-gray-100 px-4 py-3">
+      <a href="/ask"
+         class="block w-full rounded-lg bg-aegis-600 px-3 py-2 text-center text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
+        New Conversation
+      </a>
     </div>
   </div>
+
+  <!-- Main chat area -->
+  <div class="flex-1 flex flex-col rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+
+    <!-- Chat header -->
+    <div class="border-b border-gray-100 px-6 py-3 flex items-center gap-3">
+      <button @click="showSessions = !showSessions"
+              class="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+        </svg>
+      </button>
+      <div class="flex items-center gap-2">
+        <div class="h-2 w-2 rounded-full bg-green-400"></div>
+        <span class="text-sm font-medium text-gray-900">Aegis</span>
+      </div>
+      <span class="text-xs text-gray-400">RAG-powered assistant with full knowledge base context</span>
+    </div>
+
+    <!-- Messages area -->
+    <div id="chat-messages" class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+      {% if messages %}
+        {% for msg in messages %}
+          {% if msg.role == 'user' %}
+          <div class="flex justify-end">
+            <div class="max-w-[70%] rounded-2xl rounded-br-md bg-aegis-600 px-4 py-3 text-sm text-white">
+              {{ msg.content }}
+            </div>
+          </div>
+          {% elif msg.role == 'assistant' %}
+          <div class="flex justify-start">
+            <div class="max-w-[70%]">
+              <div class="rounded-2xl rounded-bl-md bg-gray-100 px-4 py-3 text-sm text-gray-800 whitespace-pre-wrap">{{ msg.content }}</div>
+              {% if msg.sources %}
+              <div class="mt-1.5 flex flex-wrap gap-1.5">
+                {% for src in msg.sources %}
+                  {% if src.url %}
+                  <a href="{{ src.url }}" class="inline-flex items-center gap-1 rounded-full bg-gray-50 border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+                    {{ src.ref }}
+                    <span class="text-gray-400">{{ src.source_type }}</span>
+                    <span class="truncate max-w-[120px]">{{ src.label }}</span>
+                  </a>
+                  {% else %}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-gray-50 border border-gray-200 px-2 py-0.5 text-xs text-gray-400">
+                    {{ src.ref }} {{ src.source_type }} — {{ src.label[:40] }}
+                  </span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        {% endfor %}
+      {% else %}
+      <div id="chat-welcome" class="flex flex-col items-center justify-center h-full text-center">
+        <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
+          <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+        </div>
+        <h2 class="mt-4 text-lg font-semibold text-gray-900">Ask Aegis anything</h2>
+        <p class="mt-2 text-sm text-gray-500 max-w-md">
+          Query your meetings, emails, Teams messages, action items, and more.
+          Aegis searches across your full knowledge base.
+        </p>
+        <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2 text-left max-w-lg">
+          <button onclick="document.getElementById('question-input').value = this.textContent.trim(); document.getElementById('chat-form').requestSubmit();"
+                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 hover:bg-gray-100 transition-colors text-left">
+            What decisions were made this week?
+          </button>
+          <button onclick="document.getElementById('question-input').value = this.textContent.trim(); document.getElementById('chat-form').requestSubmit();"
+                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 hover:bg-gray-100 transition-colors text-left">
+            List all open action items
+          </button>
+          <button onclick="document.getElementById('question-input').value = this.textContent.trim(); document.getElementById('chat-form').requestSubmit();"
+                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 hover:bg-gray-100 transition-colors text-left">
+            How many emails did I get today?
+          </button>
+          <button onclick="document.getElementById('question-input').value = this.textContent.trim(); document.getElementById('chat-form').requestSubmit();"
+                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 hover:bg-gray-100 transition-colors text-left">
+            Summarize recent budget discussions
+          </button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Input area -->
+    <div class="border-t border-gray-100 px-6 py-4 bg-white">
+      <form id="chat-form"
+            hx-post="/ask"
+            hx-target="#chat-messages"
+            hx-swap="beforeend"
+            hx-on::after-request="this.reset(); document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight; var welcome = document.getElementById('chat-welcome'); if(welcome) welcome.remove();"
+            class="flex items-end gap-3">
+        <input type="hidden" name="session_id" value="{{ session_id or '' }}">
+        <div class="flex-1">
+          <textarea id="question-input"
+                    name="question"
+                    rows="1"
+                    placeholder="Ask Aegis a question..."
+                    class="block w-full resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:bg-white focus:ring-1 focus:ring-aegis-500 transition-colors"
+                    onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); this.closest('form').requestSubmit();}"></textarea>
+        </div>
+        <button type="submit"
+                class="shrink-0 rounded-xl bg-aegis-600 p-3 text-white hover:bg-aegis-700 transition-colors focus:ring-2 focus:ring-aegis-500 focus:ring-offset-2">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+        </button>
+      </form>
+    </div>
+
+  </div>
+
 </div>
 {% endblock %}
