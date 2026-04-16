@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Command Center{% endblock %}
+{% block page_title %}Command Center{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- Date header -->
+  <div>
+    <h2 class="text-2xl font-bold text-gray-900">{{ today_str }}</h2>
+    <p class="mt-1 text-sm text-gray-500">Your daily operations hub</p>
+  </div>
+
+  <!-- Grid layout -->
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+    <!-- Today's Meetings — spans 2 cols on xl -->
+    <div class="xl:col-span-2">
+      <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div class="flex items-center gap-2">
+            <svg class="h-5 w-5 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <h3 class="text-base font-semibold text-gray-900">Today's Meetings</h3>
+            <span class="ml-1 inline-flex items-center rounded-full bg-aegis-50 px-2 py-0.5 text-xs font-medium text-aegis-700">
+              {{ meetings|length }}
+            </span>
+          </div>
+          <button hx-get="/api/meetings-today" hx-target="#meetings-list" hx-swap="innerHTML"
+                  class="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+            </svg>
+          </button>
+        </div>
+
+        <div id="meetings-list"
+             hx-get="/api/meetings-today" hx-trigger="every 60s" hx-swap="innerHTML">
+          {% include "components/meetings_today.html" %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column — placeholder panels -->
+    <div class="space-y-6">
+
+      <!-- Requires Attention -->
+      <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div class="border-b border-gray-100 px-6 py-4">
+          <div class="flex items-center gap-2">
+            <svg class="h-5 w-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <h3 class="text-base font-semibold text-gray-900">Requires Attention</h3>
+          </div>
+        </div>
+        <div class="px-6 py-8 text-center">
+          <p class="text-sm text-gray-400">Decisions, pending asks, and stale items will appear here.</p>
+          <p class="mt-1 text-xs text-gray-300">Coming in Phase 3</p>
+        </div>
+      </div>
+
+      <!-- Drafts -->
+      <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div class="border-b border-gray-100 px-6 py-4">
+          <div class="flex items-center gap-2">
+            <svg class="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+            </svg>
+            <h3 class="text-base font-semibold text-gray-900">Drafts</h3>
+          </div>
+        </div>
+        <div class="px-6 py-8 text-center">
+          <p class="text-sm text-gray-400">Draft nudges, recaps, and responses will appear here.</p>
+          <p class="mt-1 text-xs text-gray-300">Coming in Phase 4</p>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Active Workstreams placeholder -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-100 px-6 py-4">
+      <div class="flex items-center gap-2">
+        <svg class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+        </svg>
+        <h3 class="text-base font-semibold text-gray-900">Active Workstreams</h3>
+      </div>
+    </div>
+    <div class="px-6 py-8 text-center">
+      <p class="text-sm text-gray-400">Pinned workstream cards with status and sentiment will appear here.</p>
+      <p class="mt-1 text-xs text-gray-300">Coming in Phase 2</p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

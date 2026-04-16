@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Meetings{% endblock %}
+{% block page_title %}Meetings{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Header + search -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Meeting History</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ total }} meeting{{ 's' if total != 1 }} total</p>
+    </div>
+    <form method="get" action="/meetings" class="flex items-center gap-2">
+      <div class="relative">
+        <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+        <input type="text" name="q" value="{{ q }}" placeholder="Search by title..."
+               class="w-full sm:w-72 rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      </div>
+      <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
+        Search
+      </button>
+      {% if q %}
+      <a href="/meetings" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <!-- Table -->
+  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    {% if meetings %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Date</th>
+            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Time</th>
+            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Title</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Attendees</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transcript</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for meeting in meetings %}
+          <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="window.location='/meetings/{{ meeting.id }}'">
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+              {{ meeting.start_time.astimezone(tz).strftime('%b %-d, %Y') }}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-900 font-medium">
+              {{ meeting.start_time.astimezone(tz).strftime('%-I:%M %p') }}
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
+              {{ meeting.title }}
+              {% if meeting.is_excluded %}
+              <span class="ml-2 inline-flex items-center rounded-full bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500">Excluded</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-500">
+              {{ meeting.duration or '—' }}{{ ' min' if meeting.duration }}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-500">
+              {{ attendee_counts.get(meeting.id, 0) or '—' }}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center">
+              {% if meeting.status == 'completed' %}
+              <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Completed</span>
+              {% elif meeting.status == 'in_progress' %}
+              <span class="inline-flex items-center rounded-full bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700">In Progress</span>
+              {% else %}
+              <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">Scheduled</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center">
+              {% if meeting.transcript_status == 'captured' %}
+              <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">Captured</span>
+              {% elif meeting.transcript_status == 'partial' %}
+              <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">Partial</span>
+              {% elif meeting.transcript_status == 'no_audio' %}
+              <span class="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-600">No Audio</span>
+              {% elif meeting.transcript_status == 'processing' %}
+              <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">Processing</span>
+              {% else %}
+              <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-500">Pending</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="flex items-center justify-between border-t border-gray-200 bg-white px-6 py-3">
+      <p class="text-sm text-gray-500">
+        Page {{ page }} of {{ total_pages }}
+      </p>
+      <div class="flex items-center gap-2">
+        {% if page > 1 %}
+        <a href="/meetings?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}"
+           class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if page < total_pages %}
+        <a href="/meetings?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}"
+           class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="px-6 py-16 text-center">
+      <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+      <p class="mt-4 text-sm text-gray-500">
+        {% if q %}No meetings matching "{{ q }}"{% else %}No meetings yet{% endif %}
+      </p>
+      <p class="mt-1 text-xs text-gray-400">Meetings will populate once calendar sync is running</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

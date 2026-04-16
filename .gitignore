@@ -1,0 +1,19 @@
+# Environment
+.env
+var.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# IDE
+.idea/
+
+# Project
+bug_report.md
+~/.aegis/
+
+# OS
+.DS_Store

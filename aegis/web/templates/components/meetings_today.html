@@ -1,0 +1,96 @@
+{% if meetings %}
+<ul class="divide-y divide-gray-100">
+  {% for meeting in meetings %}
+  <li>
+    <a href="/meetings/{{ meeting.id }}" class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
+      <!-- Time -->
+      <div class="w-20 shrink-0 text-right">
+        <span class="text-sm font-medium text-gray-900">
+          {{ meeting.start_time.astimezone(tz).strftime('%-I:%M') }}
+        </span>
+        <span class="text-xs text-gray-400">
+          {{ meeting.start_time.astimezone(tz).strftime('%p').lower() }}
+        </span>
+      </div>
+
+      <!-- Divider dot -->
+      <div class="flex flex-col items-center">
+        <div class="h-2.5 w-2.5 rounded-full
+          {% if meeting.status == 'completed' %}bg-green-400
+          {% elif meeting.status == 'in_progress' %}bg-aegis-500 animate-pulse
+          {% else %}bg-gray-300{% endif %}"></div>
+      </div>
+
+      <!-- Content -->
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-gray-900 truncate">{{ meeting.title }}</p>
+        <div class="mt-1 flex items-center gap-3 text-xs text-gray-400">
+          {% if meeting.duration %}
+          <span>{{ meeting.duration }} min</span>
+          {% endif %}
+          {% if meeting.meeting_type %}
+          <span class="capitalize">{{ meeting.meeting_type | replace('_', ' ') }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Status badges -->
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Meeting status -->
+        {% if meeting.status == 'completed' %}
+        <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+          Completed
+        </span>
+        {% elif meeting.status == 'in_progress' %}
+        <span class="inline-flex items-center rounded-full bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700">
+          In Progress
+        </span>
+        {% else %}
+        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
+          Scheduled
+        </span>
+        {% endif %}
+
+        <!-- Transcript status -->
+        {% if meeting.transcript_status == 'captured' %}
+        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+          Transcript
+        </span>
+        {% elif meeting.transcript_status == 'partial' %}
+        <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+          Partial
+        </span>
+        {% elif meeting.transcript_status == 'no_audio' %}
+        <span class="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-600">
+          No Audio
+        </span>
+        {% elif meeting.transcript_status == 'processing' %}
+        <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
+          Processing
+        </span>
+        {% endif %}
+
+        {% if meeting.is_excluded %}
+        <span class="inline-flex items-center rounded-full bg-gray-200 px-2 py-1 text-xs font-medium text-gray-500">
+          Excluded
+        </span>
+        {% endif %}
+      </div>
+
+      <!-- Arrow -->
+      <svg class="h-4 w-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="px-6 py-12 text-center">
+  <svg class="mx-auto h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>
+  <p class="mt-3 text-sm text-gray-500">No meetings scheduled for today</p>
+  <p class="mt-1 text-xs text-gray-400">Meetings will appear here once calendar sync is active</p>
+</div>
+{% endif %}

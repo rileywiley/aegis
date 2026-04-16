@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Workstream Detail{% endblock %}
+{% block page_title %}Workstream Detail{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center py-24">
+  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
+    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
+      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+      </svg>
+    </div>
+    <h2 class="mt-6 text-lg font-semibold text-gray-900">Workstream Detail</h2>
+    <p class="mt-2 text-sm text-gray-500">Detailed timeline, stakeholders, and linked items for this workstream.</p>
+    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
+      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
+      <span class="text-xs font-medium text-aegis-700">Coming in Phase 2</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Respond{% endblock %}
+{% block page_title %}Respond{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center py-24">
+  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
+    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
+      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+      </svg>
+    </div>
+    <h2 class="mt-6 text-lg font-semibold text-gray-900">Respond</h2>
+    <p class="mt-2 text-sm text-gray-500">Draft and send responses in your voice via email or Teams.</p>
+    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
+      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
+      <span class="text-xs font-medium text-aegis-700">Coming in Phase 4</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

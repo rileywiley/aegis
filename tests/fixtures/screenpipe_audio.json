@@ -1,0 +1,81 @@
+{
+  "data": [
+    {
+      "type": "Audio",
+      "content": {
+        "text": "Good morning everyone. Let's discuss the Q2 roadmap and the priorities for the next sprint.",
+        "timestamp": "2026-04-15T10:01:00Z",
+        "speaker": {"id": "speaker_0", "name": "Alice"},
+        "duration_secs": 8.5
+      }
+    },
+    {
+      "type": "Audio",
+      "content": {
+        "text": "Sure. I think we should focus on the authentication service refactor first. It's blocking three other teams.",
+        "timestamp": "2026-04-15T10:01:30Z",
+        "speaker": {"id": "speaker_1", "name": "Bob"},
+        "duration_secs": 7.2
+      }
+    },
+    {
+      "type": "Audio",
+      "content": {
+        "text": "Agreed. The dependency on the legacy auth module is the biggest risk right now. We need to migrate by end of April.",
+        "timestamp": "2026-04-15T10:02:15Z",
+        "speaker": {"id": "speaker_0", "name": "Alice"},
+        "duration_secs": 9.1
+      }
+    },
+    {
+      "type": "Audio",
+      "content": {
+        "text": "I can take the lead on the migration plan. Should have a draft by Thursday.",
+        "timestamp": "2026-04-15T10:03:00Z",
+        "speaker": {"id": "speaker_1", "name": "Bob"},
+        "duration_secs": 5.8
+      }
+    },
+    {
+      "type": "Audio",
+      "content": {
+        "text": "Perfect. Let's also talk about the mobile app timeline. Marketing is asking for a launch date.",
+        "timestamp": "2026-04-15T10:04:00Z",
+        "speaker": {"id": "speaker_2", "name": "Carol"},
+        "duration_secs": 6.3
+      }
+    },
+    {
+      "type": "Audio",
+      "content": {
+        "text": "We're targeting June first for the beta. Full launch in July if testing goes well.",
+        "timestamp": "2026-04-15T10:05:00Z",
+        "speaker": {"id": "speaker_0", "name": "Alice"},
+        "duration_secs": 5.0
+      }
+    },
+    {
+      "type": "Audio",
+      "content": {
+        "text": "That works. I'll sync with the QA team on the testing schedule. Any other items for today?",
+        "timestamp": "2026-04-15T10:06:30Z",
+        "speaker": {"id": "speaker_2", "name": "Carol"},
+        "duration_secs": 6.0
+      }
+    },
+    {
+      "type": "Audio",
+      "content": {
+        "text": "One more thing. We got approval on the budget increase for cloud infrastructure. That's effective next month.",
+        "timestamp": "2026-04-15T10:07:00Z",
+        "speaker": {"id": "speaker_0", "name": "Alice"},
+        "duration_secs": 7.5
+      }
+    }
+  ],
+  "pagination": {
+    "limit": 1000,
+    "offset": 0,
+    "total": 8
+  }
+}

@@ -1,0 +1,239 @@
+{
+  "value": [
+    {
+      "id": "evt-normal-001",
+      "subject": "Weekly Product Sync",
+      "start": {"dateTime": "2026-04-15T14:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-15T14:30:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "isOnlineMeeting": true,
+      "onlineMeetingUrl": "https://teams.microsoft.com/l/meetup-join/abc",
+      "onlineMeeting": {"joinUrl": "https://teams.microsoft.com/l/meetup-join/abc"},
+      "showAs": "busy",
+      "responseStatus": {"response": "accepted", "time": "2026-04-14T10:00:00Z"},
+      "attendees": [
+        {
+          "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"},
+          "status": {"response": "accepted"}
+        },
+        {
+          "emailAddress": {"address": "bob@company.com", "name": "Bob Smith"},
+          "status": {"response": "accepted"}
+        },
+        {
+          "emailAddress": {"address": "charlie@company.com", "name": "Charlie Davis"},
+          "status": {"response": "tentativelyAccepted"}
+        }
+      ],
+      "organizer": {
+        "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    },
+    {
+      "id": "evt-allday-002",
+      "subject": "Company Holiday",
+      "start": {"dateTime": "2026-04-15T00:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-16T00:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": true,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "onlineMeetingUrl": null,
+      "onlineMeeting": null,
+      "showAs": "free",
+      "responseStatus": {"response": "accepted"},
+      "attendees": [],
+      "organizer": {
+        "emailAddress": {"address": "hr@company.com", "name": "HR Team"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    },
+    {
+      "id": "evt-cancelled-003",
+      "subject": "Cancelled Standup",
+      "start": {"dateTime": "2026-04-15T09:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-15T09:15:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": true,
+      "isOnlineMeeting": true,
+      "onlineMeetingUrl": null,
+      "onlineMeeting": null,
+      "showAs": "free",
+      "responseStatus": {"response": "accepted"},
+      "attendees": [
+        {
+          "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"},
+          "status": {"response": "accepted"}
+        },
+        {
+          "emailAddress": {"address": "bob@company.com", "name": "Bob Smith"},
+          "status": {"response": "accepted"}
+        }
+      ],
+      "organizer": {
+        "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    },
+    {
+      "id": "evt-solo-004",
+      "subject": "Deep Focus Block",
+      "start": {"dateTime": "2026-04-15T10:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-15T12:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "onlineMeetingUrl": null,
+      "onlineMeeting": null,
+      "showAs": "busy",
+      "responseStatus": {"response": "accepted"},
+      "attendees": [],
+      "organizer": {
+        "emailAddress": {"address": "me@company.com", "name": "Me"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    },
+    {
+      "id": "evt-recurring-005",
+      "subject": "Sprint Planning",
+      "start": {"dateTime": "2026-04-15T16:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-15T17:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "isOnlineMeeting": true,
+      "onlineMeetingUrl": "https://teams.microsoft.com/l/meetup-join/xyz",
+      "onlineMeeting": {"joinUrl": "https://teams.microsoft.com/l/meetup-join/xyz"},
+      "showAs": "busy",
+      "responseStatus": {"response": "accepted"},
+      "attendees": [
+        {
+          "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"},
+          "status": {"response": "accepted"}
+        },
+        {
+          "emailAddress": {"address": "dave@company.com", "name": "Dave Wilson"},
+          "status": {"response": "accepted"}
+        }
+      ],
+      "organizer": {
+        "emailAddress": {"address": "dave@company.com", "name": "Dave Wilson"}
+      },
+      "seriesMasterId": "series-master-sprint-001",
+      "recurrence": null,
+      "type": "occurrence"
+    },
+    {
+      "id": "evt-declined-006",
+      "subject": "Optional Workshop",
+      "start": {"dateTime": "2026-04-15T18:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-15T19:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "isOnlineMeeting": true,
+      "onlineMeetingUrl": null,
+      "onlineMeeting": null,
+      "showAs": "tentative",
+      "responseStatus": {"response": "declined"},
+      "attendees": [
+        {
+          "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"},
+          "status": {"response": "accepted"}
+        }
+      ],
+      "organizer": {
+        "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    },
+    {
+      "id": "evt-oof-007",
+      "subject": "Out of Office",
+      "start": {"dateTime": "2026-04-15T08:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-15T17:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "onlineMeetingUrl": null,
+      "onlineMeeting": null,
+      "showAs": "oof",
+      "responseStatus": {"response": "organizer"},
+      "attendees": [
+        {
+          "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"},
+          "status": {"response": "accepted"}
+        },
+        {
+          "emailAddress": {"address": "bob@company.com", "name": "Bob Smith"},
+          "status": {"response": "accepted"}
+        }
+      ],
+      "organizer": {
+        "emailAddress": {"address": "me@company.com", "name": "Me"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    },
+    {
+      "id": "evt-excluded-008",
+      "subject": "HR Performance Review - Q2",
+      "start": {"dateTime": "2026-04-16T10:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-16T11:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "isOnlineMeeting": true,
+      "onlineMeetingUrl": null,
+      "onlineMeeting": null,
+      "showAs": "busy",
+      "responseStatus": {"response": "accepted"},
+      "attendees": [
+        {
+          "emailAddress": {"address": "alice@company.com", "name": "Alice Johnson"},
+          "status": {"response": "accepted"}
+        },
+        {
+          "emailAddress": {"address": "hr@company.com", "name": "HR Manager"},
+          "status": {"response": "accepted"}
+        }
+      ],
+      "organizer": {
+        "emailAddress": {"address": "hr@company.com", "name": "HR Manager"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    },
+    {
+      "id": "evt-free-009",
+      "subject": "Focus Time",
+      "start": {"dateTime": "2026-04-16T13:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-04-16T15:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "onlineMeetingUrl": null,
+      "onlineMeeting": null,
+      "showAs": "free",
+      "responseStatus": {"response": "organizer"},
+      "attendees": [],
+      "organizer": {
+        "emailAddress": {"address": "me@company.com", "name": "Me"}
+      },
+      "seriesMasterId": null,
+      "recurrence": null,
+      "type": "singleInstance"
+    }
+  ],
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('me')/calendarView"
+}

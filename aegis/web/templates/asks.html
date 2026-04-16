@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Asks{% endblock %}
+{% block page_title %}Asks{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center py-24">
+  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
+    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
+      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </div>
+    <h2 class="mt-6 text-lg font-semibold text-gray-900">Asks</h2>
+    <p class="mt-2 text-sm text-gray-500">Pending asks from emails and Teams messages with requester/target tracking.</p>
+    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
+      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
+      <span class="text-xs font-medium text-aegis-700">Coming in Phase 3</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
