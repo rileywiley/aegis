@@ -1,0 +1,90 @@
+{% if people %}
+<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  {% for person in people %}
+  <div id="review-card-{{ person.id }}" class="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
+    <div class="flex items-start gap-3">
+      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-aegis-100 text-aegis-700 text-sm font-bold">
+        {{ person.name[0] | upper if person.name else '?' }}
+      </div>
+      <div class="min-w-0 flex-1">
+        <h3 class="text-sm font-semibold text-gray-900 truncate">{{ person.name }}</h3>
+        <p class="text-xs text-gray-500 truncate">{{ person.email or 'No email' }}</p>
+      </div>
+    </div>
+
+    {% if person.llm_suggestion %}
+    <div class="mt-4 space-y-2">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">LLM Suggestion</p>
+      <div class="rounded-lg bg-gray-50 p-3 space-y-1.5">
+        {% if person.llm_suggestion.get('title') %}
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400 w-16 shrink-0">Title</span>
+          <span class="text-xs text-gray-700">{{ person.llm_suggestion['title'] }}</span>
+        </div>
+        {% endif %}
+        {% if person.llm_suggestion.get('role') %}
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400 w-16 shrink-0">Role</span>
+          <span class="text-xs text-gray-700">{{ person.llm_suggestion['role'] }}</span>
+        </div>
+        {% endif %}
+        {% if person.llm_suggestion.get('seniority') %}
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400 w-16 shrink-0">Seniority</span>
+          <span class="text-xs text-gray-700 capitalize">{{ person.llm_suggestion['seniority'] }}</span>
+        </div>
+        {% endif %}
+        {% if person.llm_suggestion.get('department') %}
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400 w-16 shrink-0">Dept</span>
+          <span class="text-xs text-gray-700">{{ person.llm_suggestion['department'] }}</span>
+        </div>
+        {% endif %}
+        {% if person.llm_suggestion.get('notes') %}
+        <div class="mt-2 text-xs text-gray-500 italic">{{ person.llm_suggestion['notes'] }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="mt-4">
+      <p class="text-xs text-gray-400">No LLM suggestion available yet.</p>
+    </div>
+    {% endif %}
+
+    <!-- Current data -->
+    <div class="mt-3 space-y-1">
+      <p class="text-xs text-gray-400">
+        Current: {{ person.title or 'No title' }} | {{ person.seniority or 'unknown' }}
+        {% if person.department %} | {{ person.department.name }}{% endif %}
+      </p>
+      <p class="text-xs text-gray-400">
+        Source: {{ person.source or 'unknown' }} | Seen {{ person.interaction_count }}x
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div class="mt-4 flex items-center gap-2">
+      <button hx-post="/people/{{ person.id }}/approve"
+              hx-target="#review-card-{{ person.id }}"
+              hx-swap="outerHTML"
+              class="flex-1 rounded-lg bg-aegis-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-aegis-700 transition-colors">
+        Approve
+      </button>
+      <button hx-post="/people/{{ person.id }}/dismiss"
+              hx-target="#review-card-{{ person.id }}"
+              hx-swap="outerHTML"
+              class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        Dismiss
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-16">
+  <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+  <p class="mt-4 text-sm text-gray-500">All caught up! No people need review.</p>
+</div>
+{% endif %}

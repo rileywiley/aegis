@@ -1,0 +1,53 @@
+{# Recursive person node for org chart tree.
+   Expects: person, and either dt.children or children as the children map #}
+{% set children_map = dt.children if dt is defined and dt.children is defined else (children if children is defined else {}) %}
+{% set child_list = children_map.get(person.id, []) if children_map else [] %}
+
+<div class="mb-2" x-data="{ open: true }">
+  <div class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
+    <!-- Expand toggle (only if has children) -->
+    {% if child_list %}
+    <button @click="open = !open" class="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 hover:text-gray-600">
+      <svg :class="open ? 'rotate-90' : ''" class="h-4 w-4 transition-transform" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+      </svg>
+    </button>
+    {% else %}
+    <div class="w-5"></div>
+    {% endif %}
+
+    <!-- Avatar -->
+    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full {{ 'bg-purple-100 text-purple-700' if person.seniority == 'executive' else 'bg-aegis-100 text-aegis-700' if person.seniority == 'senior' else 'bg-green-100 text-green-700' if person.seniority == 'mid' else 'bg-gray-100 text-gray-600' }} text-xs font-bold">
+      {{ person.name[0] | upper if person.name else '?' }}
+    </div>
+
+    <!-- Info -->
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-medium text-gray-900 truncate">{{ person.name }}</span>
+        {% if person.seniority and person.seniority != 'unknown' %}
+        <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium
+          {{ 'bg-purple-50 text-purple-600' if person.seniority == 'executive' else 'bg-blue-50 text-blue-600' if person.seniority == 'senior' else 'bg-green-50 text-green-600' if person.seniority == 'mid' else 'bg-amber-50 text-amber-600' }}">
+          {{ person.seniority | capitalize }}
+        </span>
+        {% endif %}
+      </div>
+      <p class="text-xs text-gray-500 truncate">{{ person.title or person.role or person.email or '' }}</p>
+    </div>
+
+    {% if child_list %}
+    <span class="text-xs text-gray-400">{{ child_list | length }} report{{ 's' if child_list | length != 1 }}</span>
+    {% endif %}
+  </div>
+
+  <!-- Children -->
+  {% if child_list %}
+  <div x-show="open" class="ml-8 border-l border-gray-200 pl-2">
+    {% for child_person in child_list %}
+      {% with person=child_person %}
+        {% include "components/org_person_node.html" %}
+      {% endwith %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>

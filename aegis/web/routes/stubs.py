@@ -18,15 +18,10 @@ def _current_time() -> str:
 
 
 _STUB_PAGES = {
-    "/workstreams": ("workstreams.html", "Workstreams"),
-    "/workstreams/{workstream_id}": ("workstream_detail.html", "Workstream Detail"),
-    "/people": ("people.html", "People"),
-    "/actions": ("actions.html", "Actions"),
     "/asks": ("asks.html", "Asks"),
     "/emails": ("emails.html", "Emails"),
     "/departments": ("departments.html", "Departments"),
     "/readiness": ("readiness.html", "Readiness"),
-    "/org": ("org_chart.html", "Org Chart"),
     "/ask": ("chat.html", "Ask Aegis"),
     "/admin": ("admin.html", "Admin"),
     "/search": ("search.html", "Search"),

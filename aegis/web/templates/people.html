@@ -4,19 +4,223 @@
 {% block page_title %}People{% endblock %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center py-24">
-  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
-    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
-      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-    </div>
-    <h2 class="mt-6 text-lg font-semibold text-gray-900">People</h2>
-    <p class="mt-2 text-sm text-gray-500">People directory with profile suggestions and a needs-review queue.</p>
-    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
-      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
-      <span class="text-xs font-medium text-aegis-700">Coming in Phase 2</span>
+<div class="space-y-6" x-data="{ activeTab: 'directory' }">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">People</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ total }} {{ 'person' if total == 1 else 'people' }} in directory</p>
     </div>
   </div>
+
+  <!-- Tabs -->
+  <div class="border-b border-gray-200">
+    <nav class="-mb-px flex gap-6">
+      <button @click="activeTab = 'directory'"
+              :class="activeTab === 'directory' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'"
+              class="whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors">
+        Directory
+      </button>
+      <button @click="activeTab = 'review'"
+              :class="activeTab === 'review' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'"
+              class="whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors"
+              hx-get="/people/review"
+              hx-target="#review-content"
+              hx-trigger="click once">
+        Needs Review
+        {% if review_count > 0 %}
+        <span class="ml-2 inline-flex items-center justify-center rounded-full bg-aegis-100 px-2 py-0.5 text-xs font-medium text-aegis-700">{{ review_count }}</span>
+        {% endif %}
+      </button>
+    </nav>
+  </div>
+
+  <!-- Directory Tab -->
+  <div x-show="activeTab === 'directory'" x-cloak>
+
+    <!-- Search + Filters -->
+    <form method="get" action="/people" class="flex flex-col sm:flex-row items-start sm:items-end gap-3 mb-6">
+      <!-- Search -->
+      <div class="w-full sm:w-auto">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Search</label>
+        <div class="relative">
+          <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <input type="text" name="q" value="{{ q }}" placeholder="Name or email..."
+                 class="w-full sm:w-64 rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+        </div>
+      </div>
+
+      <!-- Department filter -->
+      <div class="w-full sm:w-auto">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Department</label>
+        <select name="department" class="w-full sm:w-44 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+          <option value="">All</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}" {{ 'selected' if department_filter == dept.id }}>{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Seniority filter -->
+      <div class="w-full sm:w-auto">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Seniority</label>
+        <select name="seniority" class="w-full sm:w-36 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+          <option value="">All</option>
+          <option value="executive" {{ 'selected' if seniority_filter == 'executive' }}>Executive</option>
+          <option value="senior" {{ 'selected' if seniority_filter == 'senior' }}>Senior</option>
+          <option value="mid" {{ 'selected' if seniority_filter == 'mid' }}>Mid</option>
+          <option value="junior" {{ 'selected' if seniority_filter == 'junior' }}>Junior</option>
+          <option value="unknown" {{ 'selected' if seniority_filter == 'unknown' }}>Unknown</option>
+        </select>
+      </div>
+
+      <!-- External filter -->
+      <div class="w-full sm:w-auto">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Type</label>
+        <select name="is_external" class="w-full sm:w-32 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+          <option value="">All</option>
+          <option value="false" {{ 'selected' if is_external_filter == false and is_external_filter is not none }}>Internal</option>
+          <option value="true" {{ 'selected' if is_external_filter == true }}>External</option>
+        </select>
+      </div>
+
+      <div class="flex gap-2">
+        <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
+          Filter
+        </button>
+        {% if q or department_filter or seniority_filter or is_external_filter is not none or needs_review_filter is not none %}
+        <a href="/people" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+
+    <!-- Table -->
+    <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      {% if people %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              {% set cols = [
+                ('name', 'Name'),
+                ('email', 'Email'),
+                ('title', 'Title / Role'),
+                ('seniority', 'Seniority'),
+                ('interaction_count', 'Interactions'),
+                ('last_seen', 'Last Seen'),
+              ] %}
+              {% for col_key, col_label in cols %}
+              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <a href="/people?sort={{ col_key }}&order={{ 'desc' if sort == col_key and order == 'asc' else 'asc' }}{% if q %}&q={{ q }}{% endif %}{% if department_filter %}&department={{ department_filter }}{% endif %}{% if seniority_filter %}&seniority={{ seniority_filter }}{% endif %}&page=1"
+                   class="group inline-flex items-center gap-1 hover:text-gray-700">
+                  {{ col_label }}
+                  {% if sort == col_key %}
+                  <svg class="h-3 w-3 text-aegis-500" viewBox="0 0 20 20" fill="currentColor">
+                    {% if order == 'asc' %}
+                    <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                    {% else %}
+                    <path fill-rule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clip-rule="evenodd" />
+                    {% endif %}
+                  </svg>
+                  {% endif %}
+                </a>
+              </th>
+              {% endfor %}
+              <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for person in people %}
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="whitespace-nowrap px-6 py-4">
+                <div class="flex items-center gap-3">
+                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full {{ 'bg-gray-200 text-gray-600' if person.is_external else 'bg-aegis-100 text-aegis-700' }} text-xs font-bold">
+                    {{ person.name[0] | upper if person.name else '?' }}
+                  </div>
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">{{ person.name }}</div>
+                    {% if person.is_external %}
+                    <span class="text-xs text-gray-400">External</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+              <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{{ person.email or '---' }}</td>
+              <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                {{ person.title or person.role or '---' }}
+              </td>
+              <td class="whitespace-nowrap px-6 py-4 text-sm">
+                {% if person.seniority == 'executive' %}
+                <span class="inline-flex items-center rounded-full bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700">Executive</span>
+                {% elif person.seniority == 'senior' %}
+                <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">Senior</span>
+                {% elif person.seniority == 'mid' %}
+                <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Mid</span>
+                {% elif person.seniority == 'junior' %}
+                <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">Junior</span>
+                {% else %}
+                <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-500">Unknown</span>
+                {% endif %}
+              </td>
+              <td class="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-500">{{ person.interaction_count }}</td>
+              <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                {{ person.last_seen.astimezone(tz).strftime('%b %-d, %Y') if person.last_seen else '---' }}
+              </td>
+              <td class="whitespace-nowrap px-6 py-4 text-center">
+                {% if person.needs_review %}
+                <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">Needs Review</span>
+                {% else %}
+                <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Reviewed</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      {% if total_pages > 1 %}
+      <div class="flex items-center justify-between border-t border-gray-200 bg-white px-6 py-3">
+        <p class="text-sm text-gray-500">
+          Page {{ page }} of {{ total_pages }}
+        </p>
+        <div class="flex items-center gap-2">
+          {% if page > 1 %}
+          <a href="/people?page={{ page - 1 }}&sort={{ sort }}&order={{ order }}{% if q %}&q={{ q }}{% endif %}{% if department_filter %}&department={{ department_filter }}{% endif %}{% if seniority_filter %}&seniority={{ seniority_filter }}{% endif %}"
+             class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Previous</a>
+          {% endif %}
+          {% if page < total_pages %}
+          <a href="/people?page={{ page + 1 }}&sort={{ sort }}&order={{ order }}{% if q %}&q={{ q }}{% endif %}{% if department_filter %}&department={{ department_filter }}{% endif %}{% if seniority_filter %}&seniority={{ seniority_filter }}{% endif %}"
+             class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Next</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% else %}
+      <div class="px-6 py-16 text-center">
+        <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+        <p class="mt-4 text-sm text-gray-500">
+          {% if q %}No people matching "{{ q }}"{% else %}No people in directory yet{% endif %}
+        </p>
+        <p class="mt-1 text-xs text-gray-400">People are added automatically from calendar events and emails</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Needs Review Tab -->
+  <div x-show="activeTab === 'review'" x-cloak>
+    <div id="review-content">
+      <div class="text-center py-12 text-sm text-gray-400">Loading review queue...</div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}

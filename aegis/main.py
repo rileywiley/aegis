@@ -59,8 +59,16 @@ app = FastAPI(
 # ── Routers ──────────────────────────────────────────────
 from aegis.web.routes.dashboard import router as dashboard_router  # noqa: E402
 from aegis.web.routes.meetings import router as meetings_router  # noqa: E402
+from aegis.web.routes.people import router as people_router  # noqa: E402
+from aegis.web.routes.org_chart import router as org_chart_router  # noqa: E402
+from aegis.web.routes.workstreams import router as workstreams_router  # noqa: E402
+from aegis.web.routes.actions import router as actions_router  # noqa: E402
 from aegis.web.routes.stubs import router as stubs_router  # noqa: E402
 
 app.include_router(dashboard_router)
 app.include_router(meetings_router)
+app.include_router(people_router)
+app.include_router(org_chart_router)
+app.include_router(workstreams_router)
+app.include_router(actions_router)
 app.include_router(stubs_router)
