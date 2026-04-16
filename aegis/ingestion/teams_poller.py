@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -222,6 +222,9 @@ class TeamsPoller:
             online_meeting_id = chat.get("onlineMeetingId")
 
             since = _last_seen.get(f"chat:{chat_id}")
+            if not since:
+                # First run: only fetch last 7 days instead of entire chat history
+                since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             try:
                 messages = await self._graph.get_chat_messages(chat_id, since=since)
             except Exception:
@@ -270,6 +273,8 @@ class TeamsPoller:
 
             for channel in channels:
                 since = _last_seen.get(f"channel:{channel.graph_channel_id}")
+                if not since:
+                    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
                 try:
                     messages = await self._graph.get_channel_messages(
                         team.graph_team_id,
