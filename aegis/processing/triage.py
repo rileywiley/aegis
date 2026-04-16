@@ -48,46 +48,52 @@ async def triage_batch(
     if not items:
         return []
 
+    # Chunk into batches of 20 to avoid truncated LLM responses
+    CHUNK_SIZE = 20
+    all_results: list[TriageResult] = []
+
     settings = get_settings()
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-    items_for_prompt = [
-        {"item_id": item["id"], "preview": item["preview"][:500], "source": item["source_type"]}
-        for item in items
-    ]
+    for i in range(0, len(items), CHUNK_SIZE):
+        chunk = items[i : i + CHUNK_SIZE]
+        items_for_prompt = [
+            {"item_id": item["id"], "preview": item["preview"][:300], "source": item["source_type"]}
+            for item in chunk
+        ]
 
-    prompt = TRIAGE_PROMPT.format(items_json=json.dumps(items_for_prompt, indent=2))
+        prompt = TRIAGE_PROMPT.format(items_json=json.dumps(items_for_prompt, indent=2))
 
-    try:
-        response = await client.messages.create(
-            model=TRIAGE_MODEL,
-            max_tokens=2048,
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            response = await client.messages.create(
+                model=TRIAGE_MODEL,
+                max_tokens=4096,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
 
-        content = response.content[0].text
-        # Parse JSON from response (may be wrapped in markdown code block)
-        if "```" in content:
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        results_raw = json.loads(content.strip())
+            content = response.content[0].text
+            # Parse JSON from response (may be wrapped in markdown code block)
+            if "```" in content:
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            results_raw = json.loads(content.strip())
 
-        results = [TriageResult(**r) for r in results_raw]
+            results = [TriageResult(**r) for r in results_raw]
+            all_results.extend(results)
 
-        # Track LLM usage
-        await _track_usage(
-            session,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-        )
+            # Track LLM usage
+            await _track_usage(
+                session,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+            )
 
-        return results
+        except Exception:
+            logger.exception("Triage batch chunk %d-%d failed", i, i + len(chunk))
 
-    except Exception:
-        logger.exception("Triage batch failed")
-        return []
+    return all_results
 
 
 async def apply_triage_results(
