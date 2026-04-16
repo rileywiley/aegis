@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
-from aegis.db.models import LLMUsage
+from aegis.db.models import ActionItem, Commitment, Decision, LLMUsage, MeetingTopic
 from aegis.processing.embeddings import embed_text
 
 logger = logging.getLogger(__name__)
@@ -28,18 +28,18 @@ class ExtractedPerson(BaseModel):
 
 class ExtractedActionItem(BaseModel):
     description: str
-    assignee: str | None = None  # person name
+    assignee: str  # person name who is responsible — REQUIRED
     deadline: str | None = None
 
 
 class ExtractedDecision(BaseModel):
     description: str
-    decided_by: str | None = None
+    decided_by: str  # person name who made/announced it — REQUIRED
 
 
 class ExtractedCommitment(BaseModel):
     description: str
-    committer: str | None = None
+    committer: str  # person name who promised — REQUIRED
     recipient: str | None = None
     deadline: str | None = None
 
@@ -56,15 +56,20 @@ class MeetingExtraction(BaseModel):
 
 EXTRACTION_PROMPT = """\
 You are an AI assistant that extracts structured information from meeting transcripts.
+The transcript has speaker labels on each line (e.g. "James: I'll handle the migration").
+Use these speaker labels to attribute every extracted entity to the correct person.
+
 Given a transcript and a list of known attendees, extract ALL of the following:
 
 1. **summary**: A concise 2-3 sentence summary of the meeting.
-2. **people**: Every person mentioned or participating. Include name, role (if mentioned), and email (if mentioned).
-3. **action_items**: Tasks assigned during the meeting. Include description, assignee name, and deadline if mentioned.
-4. **decisions**: Decisions made during the meeting. Include description and who decided.
-5. **commitments**: Promises made by one person to another. Include description, committer name, recipient name, and deadline if mentioned.
+2. **people**: Every person who speaks or is mentioned. Include name exactly as it appears in the transcript, role (if mentioned), and email (if known from the attendee list).
+3. **action_items**: Tasks assigned or volunteered for. For EACH action item, you MUST identify WHO is responsible based on the speaker label. If "James: I'll resolve that this week" — the assignee is "James". The assignee field is REQUIRED.
+4. **decisions**: Decisions made or announced. For EACH decision, you MUST identify WHO made or announced it based on the speaker label. The decided_by field is REQUIRED.
+5. **commitments**: Promises made by one person to another (e.g. "I'll send it by Thursday"). For EACH commitment, you MUST identify the committer (who promised) based on the speaker label. The committer field is REQUIRED.
 6. **topics**: A list of topic keywords/phrases discussed (3-8 topics).
 7. **sentiment**: Overall meeting sentiment — one of: positive, neutral, tense, negative, urgent.
+
+CRITICAL: The assignee, decided_by, and committer fields are REQUIRED strings — never null. Use the speaker's name exactly as it appears in the transcript (e.g. "James", "Sarah", "You").
 
 Known attendees: {attendees}
 
@@ -72,9 +77,9 @@ Return ONLY valid JSON matching this exact schema (no markdown, no code blocks):
 {{
   "summary": "string",
   "people": [{{"name": "string", "role": "string or null", "email": "string or null"}}],
-  "action_items": [{{"description": "string", "assignee": "string or null", "deadline": "string or null"}}],
-  "decisions": [{{"description": "string", "decided_by": "string or null"}}],
-  "commitments": [{{"description": "string", "committer": "string or null", "recipient": "string or null", "deadline": "string or null"}}],
+  "action_items": [{{"description": "string", "assignee": "string (REQUIRED)", "deadline": "string or null"}}],
+  "decisions": [{{"description": "string", "decided_by": "string (REQUIRED)"}}],
+  "commitments": [{{"description": "string", "committer": "string (REQUIRED)", "recipient": "string or null", "deadline": "string or null"}}],
   "topics": ["string"],
   "sentiment": "positive|neutral|tense|negative|urgent"
 }}
@@ -155,6 +160,8 @@ async def store_meeting_extraction(
     Called from pipeline.py store_node. Idempotent — checks last_extracted_at
     before creating duplicate entities.
     """
+    from sqlalchemy import delete
+
     from aegis.db.repositories import (
         create_action_item,
         create_commitment,
@@ -165,6 +172,13 @@ async def store_meeting_extraction(
     )
 
     parsed = MeetingExtraction(**extraction)
+
+    # ── Delete-and-replace: remove existing entities for this meeting ──
+    await session.execute(delete(ActionItem).where(ActionItem.source_meeting_id == meeting_id))
+    await session.execute(delete(Decision).where(Decision.source_meeting_id == meeting_id))
+    await session.execute(delete(Commitment).where(Commitment.source_meeting_id == meeting_id))
+    await session.execute(delete(MeetingTopic).where(MeetingTopic.meeting_id == meeting_id))
+    await session.flush()
 
     # Build a name->person_id lookup from the resolved extraction data.
     # resolve_node populates _resolved_people on the extraction dict.

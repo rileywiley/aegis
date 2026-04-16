@@ -18,7 +18,7 @@ from aegis.db.repositories import get_all_people
 
 logger = logging.getLogger(__name__)
 
-FUZZY_THRESHOLD = 85  # minimum score for rapidfuzz name match
+FUZZY_THRESHOLD = 80  # minimum score for rapidfuzz name match (lowered for partial names)
 
 
 async def resolve_extracted_entities(
@@ -28,10 +28,14 @@ async def resolve_extracted_entities(
 ) -> None:
     """Resolve person references in extraction against People table.
 
+    Resolves ALL person names found anywhere in the extraction:
+    - people[].name
+    - action_items[].assignee
+    - decisions[].decided_by
+    - commitments[].committer / recipient
+
     Modifies extraction dict in-place, adding a _resolved_people mapping
     of name -> person_id that store_meeting_extraction uses.
-
-    Called from pipeline.py resolve_node.
     """
     all_people = await get_all_people(session)
 
@@ -47,14 +51,32 @@ async def resolve_extracted_entities(
             for alias in person.aliases:
                 name_list.append((alias.lower(), person))
 
+    # Collect ALL unique names that need resolution from the extraction
+    names_to_resolve: dict[str, str | None] = {}  # name -> email (if available)
+
+    for ep in extraction.get("people", []):
+        name = ep.get("name", "")
+        if name:
+            names_to_resolve[name] = ep.get("email")
+
+    for ai in extraction.get("action_items", []):
+        if ai.get("assignee"):
+            names_to_resolve.setdefault(ai["assignee"], None)
+
+    for dec in extraction.get("decisions", []):
+        if dec.get("decided_by"):
+            names_to_resolve.setdefault(dec["decided_by"], None)
+
+    for com in extraction.get("commitments", []):
+        if com.get("committer"):
+            names_to_resolve.setdefault(com["committer"], None)
+        if com.get("recipient"):
+            names_to_resolve.setdefault(com["recipient"], None)
+
     resolved_people: dict[str, int] = {}
     now = datetime.now(timezone.utc)
 
-    extracted_people = extraction.get("people", [])
-    for ep in extracted_people:
-        name = ep.get("name", "")
-        email = ep.get("email")
-
+    for name, email in names_to_resolve.items():
         if not name:
             continue
 
@@ -64,12 +86,16 @@ async def resolve_extracted_entities(
         if email:
             person = email_index.get(email.lower())
 
-        # Step 2: fuzzy name match
+        # Step 2: fuzzy name match (also try partial_ratio for "James" vs "James Park")
         if person is None:
             best_score = 0
             best_match = None
             for candidate_name, candidate_person in name_list:
-                score = fuzz.ratio(name.lower(), candidate_name)
+                # Use token_set_ratio for better partial name matching
+                score = max(
+                    fuzz.ratio(name.lower(), candidate_name),
+                    fuzz.partial_ratio(name.lower(), candidate_name),
+                )
                 if score > best_score and score >= FUZZY_THRESHOLD:
                     best_score = score
                     best_match = candidate_person
@@ -88,7 +114,7 @@ async def resolve_extracted_entities(
                 confidence=0.5,
             )
             session.add(person)
-            await session.flush()  # get the id
+            await session.flush()
             logger.info(
                 "Created new person '%s' (id=%d) from meeting %d",
                 name, person.id, meeting_id,
@@ -112,9 +138,9 @@ async def resolve_extracted_entities(
     extraction["_resolved_people"] = resolved_people
 
     logger.info(
-        "Resolved %d people for meeting %d (%d new)",
+        "Resolved %d people for meeting %d (%d from DB, %d new)",
         len(resolved_people),
         meeting_id,
-        sum(1 for ep in extracted_people if ep.get("name") and ep["name"] not in
-            {p.name for p in all_people}),
+        sum(1 for n in resolved_people if n in {p.name for p in all_people}),
+        sum(1 for n in resolved_people if n not in {p.name for p in all_people}),
     )
