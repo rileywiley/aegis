@@ -15,6 +15,65 @@ logger = logging.getLogger("aegis")
 settings = get_settings()
 
 
+async def _run_processing_cycle() -> None:
+    """30-minute processing cycle: triage → extraction → workstream assignment.
+
+    Must run sequentially — each step depends on the previous one's output.
+    """
+    from aegis.processing.triage import triage_batch, apply_triage_results
+    from aegis.processing.pipeline import process_pending_meetings
+    from aegis.processing.workstream_detector import run_workstream_assignment
+
+    try:
+        # Step 1: Triage new emails + chat messages
+        async with async_session_factory() as session:
+            from aegis.db.models import Email, ChatMessage
+            from sqlalchemy import select
+
+            # Gather untriaged human emails
+            stmt = select(Email).where(
+                Email.email_class == "human",
+                Email.triage_class.is_(None),
+                Email.processing_status == "pending",
+            )
+            result = await session.execute(stmt)
+            emails = list(result.scalars().all())
+            if emails:
+                items = [{"id": e.id, "preview": (e.body_preview or e.subject or "")[:500], "source_type": "email"} for e in emails]
+                results = await triage_batch(session, items)
+                if results:
+                    await apply_triage_results(session, results, "email")
+                logger.info("Triage: classified %d emails", len(results))
+
+            # Gather untriaged chat messages
+            stmt = select(ChatMessage).where(
+                ChatMessage.noise_filtered.is_(False),
+                ChatMessage.triage_class.is_(None),
+                ChatMessage.processing_status == "pending",
+            )
+            result = await session.execute(stmt)
+            chats = list(result.scalars().all())
+            if chats:
+                items = [{"id": c.id, "preview": (c.body_preview or c.body_text or "")[:500], "source_type": "chat_message"} for c in chats]
+                results = await triage_batch(session, items)
+                if results:
+                    await apply_triage_results(session, results, "chat_message")
+                logger.info("Triage: classified %d chat messages", len(results))
+
+        # Step 2: Run extraction pipeline on pending meetings
+        count = await process_pending_meetings()
+        if count:
+            logger.info("Extraction: processed %d meetings", count)
+
+        # Step 3: Workstream assignment
+        async with async_session_factory() as session:
+            stats = await run_workstream_assignment(session)
+            logger.info("Workstream assignment: %s", stats)
+
+    except Exception:
+        logger.exception("Processing cycle failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
@@ -42,11 +101,32 @@ async def lifespan(app: FastAPI):
         if reset_count:
             logger.info("Reset %d stuck processing items back to pending", reset_count)
 
-    logger.info("Aegis ready")
+    # ── Start background services ────────────────────────
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from aegis.ingestion.poller import start_polling, stop_polling
+
+    # Start data pollers (calendar, email, Teams)
+    await start_polling()
+
+    # Start the 30-minute processing cycle (triage → extraction → workstream)
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        _run_processing_cycle,
+        "interval",
+        seconds=1800,
+        id="processing_cycle",
+        replace_existing=True,
+    )
+    scheduler.start()
+    app.state.scheduler = scheduler
+
+    logger.info("Aegis ready — pollers and processing cycle running")
     yield
 
     # ── Shutdown ─────────────────────────────────────────
     logger.info("Aegis shutting down")
+    scheduler.shutdown(wait=False)
+    await stop_polling()
     await engine.dispose()
 
 
