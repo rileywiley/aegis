@@ -66,12 +66,15 @@ async def resolve_node(state: PipelineState) -> dict:
 
     try:
         async with async_session_factory() as session:
+            # resolve modifies extraction in-place, adding _resolved_people
+            extraction = state.extraction_result
             await resolve_extracted_entities(
                 session=session,
                 meeting_id=state.item_id,
-                extraction=state.extraction_result,
+                extraction=extraction,
             )
-            return {}
+            # MUST return the modified extraction so LangGraph persists it
+            return {"extraction_result": extraction}
     except Exception as e:
         logger.exception("Entity resolution failed for meeting %d", state.item_id)
         return {"error": str(e)}
