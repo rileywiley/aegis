@@ -10,10 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.db.models import (
     Department,
+    Email,
     Meeting,
     MeetingAttendee,
     Person,
     PersonHistory,
+    Team,
+    TeamMembership,
 )
 
 logger = logging.getLogger("aegis.org_inference")
@@ -382,6 +385,305 @@ async def _cluster_departments(session: AsyncSession) -> int:
     return departments_created
 
 
+async def compute_cc_gravity(session: AsyncSession) -> dict:
+    """Analyze email CC patterns to identify influence/importance.
+
+    For each person, count how often they appear in CC of emails sent by others.
+    Higher CC gravity = more organizational influence. Updates cc_gravity_score
+    on Person records.
+
+    Returns:
+        dict with key: people_updated
+    """
+    # Fetch all emails with recipients (CC list is in the recipients JSONB)
+    stmt = select(Email.sender_id, Email.recipients).where(
+        Email.recipients.isnot(None),
+        Email.sender_id.isnot(None),
+    )
+    result = await session.execute(stmt)
+    rows = result.all()
+
+    # Count CC appearances per person email
+    cc_counts: Counter = Counter()
+    for sender_id, recipients in rows:
+        if not isinstance(recipients, list):
+            continue
+        for recip in recipients:
+            if isinstance(recip, dict) and recip.get("type") == "cc":
+                email_addr = recip.get("email", "").lower().strip()
+                if email_addr:
+                    cc_counts[email_addr] += 1
+
+    if not cc_counts:
+        logger.info("CC gravity: no CC recipients found in emails")
+        return {"people_updated": 0}
+
+    # Normalize scores (0.0 to 1.0 relative to max)
+    max_cc = max(cc_counts.values()) if cc_counts else 1
+
+    # Load people by email for matching
+    emails_to_check = list(cc_counts.keys())
+    stmt = select(Person).where(
+        func.lower(Person.email).in_(emails_to_check)
+    )
+    result = await session.execute(stmt)
+    people = list(result.scalars().all())
+
+    updated = 0
+    for person in people:
+        if not person.email:
+            continue
+        count = cc_counts.get(person.email.lower().strip(), 0)
+        if count > 0:
+            new_score = round(count / max_cc, 3)
+            if abs(person.cc_gravity_score - new_score) > 0.001:
+                person.cc_gravity_score = new_score
+                updated += 1
+
+    if updated:
+        await session.flush()
+    logger.info("CC gravity: updated %d people", updated)
+    return {"people_updated": updated}
+
+
+# ── Email signature parsing patterns ─────────────────────
+
+_SIG_SEPARATOR = re.compile(
+    r"(?:^|\n)(?:--|__+|~~+|Best\s+regards|Kind\s+regards|Thanks|Regards|Cheers|Sincerely)",
+    re.IGNORECASE,
+)
+
+# Pattern: "Name | Title | Department" or "Name - Title - Department"
+_SIG_PIPE_PATTERN = re.compile(
+    r"^([^|\-]+)\s*[|\-]\s*([^|\-]+?)(?:\s*[|\-]\s*(.+))?$"
+)
+
+# Pattern: title-like line (often follows name)
+_TITLE_KEYWORDS = re.compile(
+    r"\b(director|manager|engineer|analyst|designer|consultant|coordinator|"
+    r"specialist|architect|developer|lead|head|chief|vp|vice\s+president|"
+    r"president|officer|associate|senior|principal|staff)\b",
+    re.IGNORECASE,
+)
+
+# Department keywords
+_DEPT_KEYWORDS = re.compile(
+    r"\b(engineering|marketing|sales|finance|hr|human\s+resources|operations|"
+    r"product|design|legal|compliance|security|it|infrastructure|data|"
+    r"research|communications|support|customer\s+success|business\s+development)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_title_dept_from_signature(body_text: str) -> tuple[str | None, str | None]:
+    """Parse email signature to extract title and department using regex.
+
+    Returns (title, department) — either may be None.
+    """
+    if not body_text:
+        return None, None
+
+    # Find signature block
+    sig_match = _SIG_SEPARATOR.search(body_text)
+    if sig_match:
+        sig_text = body_text[sig_match.start():]
+    else:
+        # Use last 500 chars as fallback
+        sig_text = body_text[-500:]
+
+    lines = [line.strip() for line in sig_text.split("\n") if line.strip()]
+
+    title: str | None = None
+    department: str | None = None
+
+    for line in lines:
+        # Skip very long lines (unlikely to be signature elements)
+        if len(line) > 100:
+            continue
+
+        # Try pipe/dash separated pattern
+        pipe_match = _SIG_PIPE_PATTERN.match(line)
+        if pipe_match:
+            part2 = pipe_match.group(2).strip()
+            part3 = pipe_match.group(3)
+            if _TITLE_KEYWORDS.search(part2):
+                title = part2
+            if part3:
+                part3 = part3.strip()
+                if _DEPT_KEYWORDS.search(part3):
+                    department = part3
+                elif not title and _TITLE_KEYWORDS.search(part3):
+                    title = part3
+            continue
+
+        # Check if the line looks like a title
+        if not title and _TITLE_KEYWORDS.search(line) and len(line) < 60:
+            # Avoid lines that are clearly email addresses or URLs
+            if "@" not in line and "http" not in line.lower():
+                title = line
+
+        # Check if the line looks like a department
+        if not department and _DEPT_KEYWORDS.search(line) and len(line) < 60:
+            if "@" not in line and "http" not in line.lower():
+                department = line
+
+    return title, department
+
+
+async def parse_email_signatures(session: AsyncSession) -> dict:
+    """Extract title and department from email signatures for people who lack them.
+
+    Uses regex pattern matching (no LLM cost). One-time per person: skips
+    people who already have a title set.
+
+    Returns:
+        dict with keys: signatures_parsed, titles_found, departments_found
+    """
+    # Find people without title who have sent emails
+    people_stmt = select(Person).where(
+        Person.title.is_(None) | (Person.title == ""),
+        Person.email.isnot(None),
+    )
+    result = await session.execute(people_stmt)
+    people_without_title = list(result.scalars().all())
+
+    if not people_without_title:
+        logger.info("Signature parsing: no people without title found")
+        return {"signatures_parsed": 0, "titles_found": 0, "departments_found": 0}
+
+    signatures_parsed = 0
+    titles_found = 0
+    departments_found = 0
+
+    for person in people_without_title:
+        # Find their most recent sent email (where they are the sender)
+        email_stmt = (
+            select(Email.body_text)
+            .where(Email.sender_id == person.id, Email.body_text.isnot(None))
+            .order_by(Email.datetime_.desc())
+            .limit(1)
+        )
+        email_result = await session.execute(email_stmt)
+        body_text = email_result.scalar_one_or_none()
+
+        if not body_text:
+            continue
+
+        signatures_parsed += 1
+        title, department = _extract_title_dept_from_signature(body_text)
+
+        if title:
+            await _log_change(session, person.id, "title", person.title, title)
+            person.title = title
+            titles_found += 1
+
+            # Also update seniority based on new title
+            new_seniority = infer_seniority_from_title(title)
+            if new_seniority != "unknown" and person.seniority == "unknown":
+                await _log_change(session, person.id, "seniority", person.seniority, new_seniority)
+                person.seniority = new_seniority
+
+        if department and not person.org:
+            await _log_change(session, person.id, "org", person.org, department)
+            person.org = department
+            departments_found += 1
+
+    if titles_found or departments_found:
+        await session.flush()
+
+    logger.info(
+        "Signature parsing: parsed %d signatures, found %d titles, %d departments",
+        signatures_parsed,
+        titles_found,
+        departments_found,
+    )
+    return {
+        "signatures_parsed": signatures_parsed,
+        "titles_found": titles_found,
+        "departments_found": departments_found,
+    }
+
+
+async def infer_departments_from_teams(session: AsyncSession) -> dict:
+    """Use Teams membership data as a direct department signal.
+
+    Each Team often maps to a department or workgroup. Creates/updates
+    Department records from Team data and links people to departments
+    based on team membership.
+
+    Returns:
+        dict with keys: departments_created, people_linked
+    """
+    # Load all teams
+    teams_stmt = select(Team)
+    teams_result = await session.execute(teams_stmt)
+    teams = list(teams_result.scalars().all())
+
+    if not teams:
+        logger.info("Teams department inference: no teams found")
+        return {"departments_created": 0, "people_linked": 0}
+
+    # Load existing departments (match by name to avoid duplicates)
+    dept_stmt = select(Department)
+    dept_result = await session.execute(dept_stmt)
+    existing_depts = {d.name.lower(): d for d in dept_result.scalars().all()}
+
+    departments_created = 0
+    people_linked = 0
+
+    for team in teams:
+        # Check if a department already exists matching this team name
+        dept_key = team.name.lower().strip()
+        dept = existing_depts.get(dept_key)
+
+        if not dept:
+            # Create a new department from team data
+            dept = Department(
+                name=team.name,
+                description=team.description or f"Department inferred from Teams team: {team.name}",
+                source="teams",
+                confidence=0.8,
+            )
+            session.add(dept)
+            await session.flush()
+            existing_depts[dept_key] = dept
+            departments_created += 1
+
+        # Get team members
+        members_stmt = (
+            select(TeamMembership.person_id)
+            .where(TeamMembership.team_id == team.id)
+        )
+        members_result = await session.execute(members_stmt)
+        member_ids = [row for row in members_result.scalars().all()]
+
+        if not member_ids:
+            continue
+
+        # Load people who don't have a department yet
+        people_stmt = select(Person).where(
+            Person.id.in_(member_ids),
+            Person.department_id.is_(None),
+        )
+        people_result = await session.execute(people_stmt)
+        people_to_link = list(people_result.scalars().all())
+
+        for person in people_to_link:
+            await _log_change(session, person.id, "department_id", None, str(dept.id))
+            person.department_id = dept.id
+            people_linked += 1
+
+    if departments_created or people_linked:
+        await session.flush()
+
+    logger.info(
+        "Teams department inference: created %d departments, linked %d people",
+        departments_created,
+        people_linked,
+    )
+    return {"departments_created": departments_created, "people_linked": people_linked}
+
+
 async def infer_org_structure(session: AsyncSession) -> dict:
     """Run all org inference heuristics and return a stats summary.
 
@@ -397,12 +699,22 @@ async def infer_org_structure(session: AsyncSession) -> dict:
     managers_inferred = await _infer_managers(session)
     departments_created = await _cluster_departments(session)
 
+    # Email-based signals
+    cc_gravity_stats = await compute_cc_gravity(session)
+    signature_stats = await parse_email_signatures(session)
+    teams_dept_stats = await infer_departments_from_teams(session)
+
     await session.commit()
 
     stats = {
         "managers_inferred": managers_inferred,
         "seniority_updated": seniority_updated,
         "departments_created": departments_created,
+        "cc_gravity_people_updated": cc_gravity_stats["people_updated"],
+        "signatures_parsed": signature_stats["signatures_parsed"],
+        "titles_found": signature_stats["titles_found"],
+        "teams_departments_created": teams_dept_stats["departments_created"],
+        "teams_people_linked": teams_dept_stats["people_linked"],
     }
     logger.info("Org inference complete: %s", stats)
     return stats

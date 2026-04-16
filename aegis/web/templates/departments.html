@@ -4,19 +4,88 @@
 {% block page_title %}Departments{% endblock %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center py-24">
-  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
-    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
-      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-      </svg>
-    </div>
-    <h2 class="mt-6 text-lg font-semibold text-gray-900">Departments</h2>
-    <p class="mt-2 text-sm text-gray-500">Department health overview with open items and overdue counts.</p>
-    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
-      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
-      <span class="text-xs font-medium text-aegis-700">Coming in Phase 3</span>
+<div class="space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Departments</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ total_departments }} {{ 'department' if total_departments == 1 else 'departments' }} tracked</p>
     </div>
   </div>
+
+  {% if dept_cards %}
+  <!-- Department Cards Grid -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for card in dept_cards %}
+    <a href="/departments/{{ card.department.id }}"
+       class="block rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-aegis-300 transition-all">
+
+      <!-- Header row -->
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <h3 class="text-base font-semibold text-gray-900 truncate">{{ card.department.name }}</h3>
+          {% if card.head_name %}
+          <p class="mt-0.5 text-xs text-gray-500 truncate">Led by {{ card.head_name }}</p>
+          {% endif %}
+        </div>
+        <!-- Health indicator -->
+        {% if card.health == 'red' %}
+        <span class="flex h-3 w-3 shrink-0 mt-1.5 rounded-full bg-red-500" title="Has overdue items"></span>
+        {% elif card.health == 'yellow' %}
+        <span class="flex h-3 w-3 shrink-0 mt-1.5 rounded-full bg-amber-400" title="Many open items"></span>
+        {% else %}
+        <span class="flex h-3 w-3 shrink-0 mt-1.5 rounded-full bg-green-500" title="Healthy"></span>
+        {% endif %}
+      </div>
+
+      <!-- Member count badge -->
+      <div class="mt-3 flex items-center gap-2">
+        <span class="inline-flex items-center rounded-full bg-aegis-50 px-2.5 py-0.5 text-xs font-medium text-aegis-700">
+          {{ card.member_count }} {{ 'member' if card.member_count == 1 else 'members' }}
+        </span>
+        {% if card.department.source == 'teams' %}
+        <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">Teams</span>
+        {% elif card.department.source == 'inferred' %}
+        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Inferred</span>
+        {% elif card.department.source == 'manual' %}
+        <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-600">Manual</span>
+        {% endif %}
+      </div>
+
+      <!-- Stats row -->
+      <div class="mt-4 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3">
+        <div class="text-center">
+          <p class="text-lg font-semibold {{ 'text-gray-900' if card.open_items.total_open > 0 else 'text-gray-400' }}">{{ card.open_items.total_open }}</p>
+          <p class="text-xs text-gray-500">Open</p>
+        </div>
+        <div class="text-center">
+          <p class="text-lg font-semibold {{ 'text-red-600' if card.open_items.total_overdue > 0 else 'text-gray-400' }}">{{ card.open_items.total_overdue }}</p>
+          <p class="text-xs text-gray-500">Overdue</p>
+        </div>
+        <div class="text-center">
+          <p class="text-lg font-semibold text-gray-900">{{ card.member_count }}</p>
+          <p class="text-xs text-gray-500">People</p>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <!-- Empty state -->
+  <div class="flex flex-col items-center justify-center py-24">
+    <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
+      <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
+        <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+      </div>
+      <h2 class="mt-6 text-lg font-semibold text-gray-900">No departments yet</h2>
+      <p class="mt-2 text-sm text-gray-500">Departments are inferred automatically from meeting patterns, Teams membership, and email signatures.</p>
+    </div>
+  </div>
+  {% endif %}
+
 </div>
 {% endblock %}

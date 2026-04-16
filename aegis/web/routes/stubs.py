@@ -18,9 +18,6 @@ def _current_time() -> str:
 
 
 _STUB_PAGES = {
-    "/asks": ("asks.html", "Asks"),
-    "/emails": ("emails.html", "Emails"),
-    "/departments": ("departments.html", "Departments"),
     "/readiness": ("readiness.html", "Readiness"),
     "/ask": ("chat.html", "Ask Aegis"),
     "/admin": ("admin.html", "Admin"),

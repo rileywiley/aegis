@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Email Detail{% endblock %}
+{% block page_title %}Email{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Back link -->
+  <a href="/emails" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+    </svg>
+    Back to Emails
+  </a>
+
+  <!-- Email header -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <h2 class="text-xl font-bold text-gray-900">{{ email.subject or '(No Subject)' }}</h2>
+        <div class="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-500">
+          <span>From: <span class="font-medium text-gray-700">{{ sender_name or 'Unknown' }}</span></span>
+          <span>{{ email.datetime_.astimezone(tz).strftime('%b %-d, %Y at %-I:%M %p') }}</span>
+        </div>
+        {% if email.recipients %}
+        <div class="mt-1 text-sm text-gray-500">
+          To: {% for r in email.recipients %}{{ r.name or r.email }}{% if not loop.last %}, {% endif %}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {% if email.email_class %}
+          {% set class_colors = {'human': 'bg-blue-50 text-blue-700', 'automated': 'bg-gray-100 text-gray-600', 'newsletter': 'bg-purple-50 text-purple-700'} %}
+          <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium {{ class_colors.get(email.email_class, 'bg-gray-100 text-gray-600') }}">
+            {{ email.email_class | title }}
+          </span>
+        {% endif %}
+        {% if email.intent %}
+          {% set intent_colors = {'request': 'bg-orange-50 text-orange-700', 'fyi': 'bg-gray-100 text-gray-600', 'decision_needed': 'bg-red-50 text-red-700', 'follow_up': 'bg-yellow-50 text-yellow-700', 'question': 'bg-aegis-50 text-aegis-700', 'response': 'bg-green-50 text-green-700', 'scheduling': 'bg-cyan-50 text-cyan-700'} %}
+          <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium {{ intent_colors.get(email.intent, 'bg-gray-100 text-gray-600') }}">
+            {{ email.intent | replace('_', ' ') | title }}
+          </span>
+        {% endif %}
+        {% if email.sentiment %}
+          {% set sent_colors = {'positive': 'bg-green-50 text-green-700', 'neutral': 'bg-gray-100 text-gray-600', 'tense': 'bg-yellow-50 text-yellow-700', 'negative': 'bg-red-50 text-red-600', 'urgent': 'bg-red-100 text-red-700'} %}
+          <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium {{ sent_colors.get(email.sentiment, 'bg-gray-100 text-gray-600') }}">
+            {{ email.sentiment | title }}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if email.summary %}
+    <div class="mt-4 rounded-lg bg-aegis-50 p-4">
+      <p class="text-sm font-medium text-aegis-800">Summary</p>
+      <p class="mt-1 text-sm text-aegis-700">{{ email.summary }}</p>
+    </div>
+    {% endif %}
+
+    {% if email.body_preview %}
+    <div class="mt-4">
+      <p class="text-sm font-medium text-gray-700">Body Preview</p>
+      <p class="mt-1 text-sm text-gray-600 whitespace-pre-wrap">{{ email.body_preview }}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Asks -->
+  {% if asks %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+    <h3 class="text-lg font-semibold text-gray-900">Asks ({{ asks | length }})</h3>
+    <div class="mt-4 space-y-3">
+      {% for ask in asks %}
+      <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex-1">
+            <p class="text-sm text-gray-900">{{ ask.description }}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+              {% set type_colors = {'deliverable': 'bg-blue-50 text-blue-700', 'decision': 'bg-red-50 text-red-700', 'follow_up': 'bg-yellow-50 text-yellow-700', 'question': 'bg-aegis-50 text-aegis-700', 'approval': 'bg-orange-50 text-orange-700', 'review': 'bg-purple-50 text-purple-700', 'info_request': 'bg-cyan-50 text-cyan-700'} %}
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 font-medium {{ type_colors.get(ask.ask_type, 'bg-gray-100 text-gray-600') }}">
+                {{ ask.ask_type | replace('_', ' ') | title }}
+              </span>
+              {% if ask.requester_id and person_map.get(ask.requester_id) %}
+                <span>From: {{ person_map[ask.requester_id].name }}</span>
+              {% endif %}
+              {% if ask.target_id and person_map.get(ask.target_id) %}
+                <span>To: {{ person_map[ask.target_id].name }}</span>
+              {% endif %}
+              {% if ask.deadline %}
+                <span>Deadline: {{ ask.deadline }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            {% set urgency_colors = {'high': 'bg-red-50 text-red-700', 'medium': 'bg-yellow-50 text-yellow-700', 'low': 'bg-green-50 text-green-700'} %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ urgency_colors.get(ask.urgency, 'bg-gray-100 text-gray-600') }}">
+              {{ ask.urgency | title }}
+            </span>
+            {% set status_colors = {'open': 'bg-yellow-50 text-yellow-700', 'in_progress': 'bg-blue-50 text-blue-700', 'completed': 'bg-green-50 text-green-700', 'stale': 'bg-red-50 text-red-600'} %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ status_colors.get(ask.status, 'bg-gray-100 text-gray-600') }}">
+              {{ ask.status | replace('_', ' ') | title }}
+            </span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

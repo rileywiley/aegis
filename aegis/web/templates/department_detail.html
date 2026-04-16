@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — {{ dept.name }}{% endblock %}
+{% block page_title %}{{ dept.name }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Back link + Header -->
+  <div>
+    <a href="/departments" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-aegis-600 transition-colors mb-3">
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+      </svg>
+      All Departments
+    </a>
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+        <h2 class="text-2xl font-bold text-gray-900">{{ dept.name }}</h2>
+        {% if dept.description %}
+        <p class="mt-1 text-sm text-gray-500">{{ dept.description }}</p>
+        {% endif %}
+        {% if head_name %}
+        <p class="mt-1 text-sm text-gray-600">Head: <span class="font-medium">{{ head_name }}</span></p>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2">
+        {% if dept.source == 'teams' %}
+        <span class="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-600">Source: Teams</span>
+        {% elif dept.source == 'inferred' %}
+        <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">Source: Inferred</span>
+        {% elif dept.source == 'manual' %}
+        <span class="inline-flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-600">Source: Manual</span>
+        {% endif %}
+        {% if dept.confidence is not none %}
+        <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">Confidence: {{ (dept.confidence * 100) | int }}%</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Members</p>
+      <p class="mt-1 text-2xl font-bold text-gray-900">{{ members | length }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Open Items</p>
+      <p class="mt-1 text-2xl font-bold {{ 'text-amber-600' if open_items.total_open > 0 else 'text-gray-900' }}">{{ open_items.total_open }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Overdue</p>
+      <p class="mt-1 text-2xl font-bold {{ 'text-red-600' if open_items.total_overdue > 0 else 'text-gray-900' }}">{{ open_items.total_overdue }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Workstreams</p>
+      <p class="mt-1 text-2xl font-bold text-gray-900">{{ workstreams | length }}</p>
+    </div>
+  </div>
+
+  <!-- Open Items Breakdown -->
+  {% if open_items.total_open > 0 or open_items.total_overdue > 0 %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-900">Open Items Breakdown</h3>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+      <div class="px-5 py-4">
+        <p class="text-xs text-gray-500">Action Items</p>
+        <p class="mt-1 text-lg font-semibold text-gray-900">{{ open_items.open_action_items }}</p>
+      </div>
+      <div class="px-5 py-4">
+        <p class="text-xs text-gray-500">Email Asks</p>
+        <p class="mt-1 text-lg font-semibold text-gray-900">{{ open_items.open_email_asks }}</p>
+      </div>
+      <div class="px-5 py-4">
+        <p class="text-xs text-gray-500">Chat Asks</p>
+        <p class="mt-1 text-lg font-semibold text-gray-900">{{ open_items.open_chat_asks }}</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- People Table -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-900">People ({{ members | length }})</h3>
+    </div>
+    {% if members %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+            <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Title / Role</th>
+            <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Seniority</th>
+            <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Last Seen</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for person in members %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="whitespace-nowrap px-5 py-3">
+              <div class="flex items-center gap-2">
+                <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full {{ 'bg-gray-200 text-gray-600' if person.is_external else 'bg-aegis-100 text-aegis-700' }} text-xs font-bold">
+                  {{ person.name[0] | upper if person.name else '?' }}
+                </div>
+                <div>
+                  <span class="text-sm font-medium text-gray-900">{{ person.name }}</span>
+                  {% if person.email %}
+                  <p class="text-xs text-gray-400">{{ person.email }}</p>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td class="px-5 py-3 text-sm text-gray-500 max-w-xs truncate">{{ person.title or person.role or '---' }}</td>
+            <td class="whitespace-nowrap px-5 py-3 text-sm">
+              {% if person.seniority == 'executive' %}
+              <span class="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">Executive</span>
+              {% elif person.seniority == 'senior' %}
+              <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Senior</span>
+              {% elif person.seniority == 'mid' %}
+              <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Mid</span>
+              {% elif person.seniority == 'junior' %}
+              <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Junior</span>
+              {% else %}
+              <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Unknown</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-500">
+              {{ person.last_seen.astimezone(tz).strftime('%b %-d, %Y') if person.last_seen else '---' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="px-5 py-12 text-center text-sm text-gray-400">No members in this department</div>
+    {% endif %}
+  </div>
+
+  <!-- Workstreams -->
+  {% if workstreams %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-900">Active Workstreams ({{ workstreams | length }})</h3>
+    </div>
+    <div class="divide-y divide-gray-100">
+      {% for ws in workstreams %}
+      <a href="/workstreams/{{ ws.id }}" class="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-900 truncate">{{ ws.name }}</p>
+          {% if ws.description %}
+          <p class="text-xs text-gray-500 truncate">{{ ws.description }}</p>
+          {% endif %}
+        </div>
+        <div class="ml-3 flex items-center gap-2">
+          {% if ws.status == 'active' %}
+          <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+          {% elif ws.status == 'quiet' %}
+          <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Quiet</span>
+          {% endif %}
+          <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

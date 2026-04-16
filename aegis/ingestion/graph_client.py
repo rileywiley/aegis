@@ -194,6 +194,119 @@ class GraphClient:
         }
         return await self._get_paginated(url, params=params)
 
+    # ── Email methods ──────────────────────────────────────
+
+    async def get_messages(
+        self,
+        folder: str = "inbox",
+        since: str | None = None,
+        top: int = 100,
+    ) -> list[dict]:
+        """Fetch emails from a mail folder. Supports incremental sync via `since`."""
+        url = f"{GRAPH_BASE_URL}/me/mailFolders/{folder}/messages"
+        params: dict = {
+            "$select": (
+                "id,subject,from,toRecipients,ccRecipients,receivedDateTime,"
+                "bodyPreview,body,conversationId,isRead,importance,"
+                "hasAttachments,internetMessageHeaders"
+            ),
+            "$orderby": "receivedDateTime desc",
+            "$top": str(top),
+        }
+        if since:
+            params["$filter"] = f"receivedDateTime ge {since}"
+        return await self._get_paginated(url, params=params)
+
+    async def get_message(self, message_id: str) -> dict:
+        """Fetch a single email message by ID."""
+        url = f"{GRAPH_BASE_URL}/me/messages/{message_id}"
+        return await self._request("GET", url)
+
+    async def get_message_attachments(self, message_id: str) -> list[dict]:
+        """Fetch attachment metadata for a message."""
+        url = f"{GRAPH_BASE_URL}/me/messages/{message_id}/attachments"
+        params = {"$select": "id,name,contentType,size,isInline"}
+        return await self._get_paginated(url, params=params)
+
+    async def send_mail(
+        self,
+        subject: str,
+        body: str,
+        to: list[str],
+        cc: list[str] | None = None,
+        reply_to_id: str | None = None,
+    ) -> None:
+        """Send an email via Graph API (Mail.Send permission)."""
+        to_recipients = [{"emailAddress": {"address": addr}} for addr in to]
+        cc_recipients = [{"emailAddress": {"address": addr}} for addr in (cc or [])]
+        message = {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": body},
+            "toRecipients": to_recipients,
+        }
+        if cc_recipients:
+            message["ccRecipients"] = cc_recipients
+
+        payload: dict = {"message": message, "saveToSentItems": True}
+        if reply_to_id:
+            # For replies, use the reply endpoint instead
+            url = f"{GRAPH_BASE_URL}/me/messages/{reply_to_id}/reply"
+            await self._request("POST", url, json={"comment": body})
+            return
+
+        url = f"{GRAPH_BASE_URL}/me/sendMail"
+        await self._request("POST", url, json=payload)
+
+    # ── Teams methods ────────────────────────────────────
+
+    async def get_joined_teams(self) -> list[dict]:
+        """GET /me/joinedTeams — list teams the user belongs to."""
+        url = f"{GRAPH_BASE_URL}/me/joinedTeams"
+        return await self._get_paginated(url)
+
+    async def get_team_channels(self, team_id: str) -> list[dict]:
+        """GET /teams/{id}/channels — list channels in a team."""
+        url = f"{GRAPH_BASE_URL}/teams/{team_id}/channels"
+        return await self._get_paginated(url)
+
+    async def get_team_members(self, team_id: str) -> list[dict]:
+        """GET /teams/{id}/members — list team members."""
+        url = f"{GRAPH_BASE_URL}/teams/{team_id}/members"
+        return await self._get_paginated(url)
+
+    async def get_channel_messages(
+        self,
+        team_id: str,
+        channel_id: str,
+        since: str | None = None,
+        top: int = 50,
+    ) -> list[dict]:
+        """Fetch messages from a Teams channel."""
+        url = f"{GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages"
+        params: dict = {"$top": str(top)}
+        if since:
+            params["$filter"] = f"createdDateTime ge {since}"
+        return await self._get_paginated(url, params=params)
+
+    async def get_chats(self) -> list[dict]:
+        """GET /me/chats — list all chats (1:1, group, meeting)."""
+        url = f"{GRAPH_BASE_URL}/me/chats"
+        params = {"$expand": "members", "$top": "50"}
+        return await self._get_paginated(url, params=params)
+
+    async def get_chat_messages(
+        self,
+        chat_id: str,
+        since: str | None = None,
+        top: int = 50,
+    ) -> list[dict]:
+        """Fetch messages from a specific chat."""
+        url = f"{GRAPH_BASE_URL}/me/chats/{chat_id}/messages"
+        params: dict = {"$top": str(top)}
+        if since:
+            params["$filter"] = f"createdDateTime ge {since}"
+        return await self._get_paginated(url, params=params)
+
     async def close(self) -> None:
         """Shut down the underlying httpx client."""
         await self._http.aclose()

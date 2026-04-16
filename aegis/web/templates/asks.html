@@ -4,19 +4,196 @@
 {% block page_title %}Asks{% endblock %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center py-24">
-  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
-    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
-      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </div>
-    <h2 class="mt-6 text-lg font-semibold text-gray-900">Asks</h2>
-    <p class="mt-2 text-sm text-gray-500">Pending asks from emails and Teams messages with requester/target tracking.</p>
-    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
-      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
-      <span class="text-xs font-medium text-aegis-700">Coming in Phase 3</span>
+<div class="space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Pending Asks</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ total }} ask{{ 's' if total != 1 }} total</p>
     </div>
   </div>
+
+  <!-- Tabs -->
+  <div class="border-b border-gray-200">
+    <nav class="flex gap-4" aria-label="Tabs">
+      <a href="/asks?tab=all{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
+         class="px-1 pb-3 text-sm font-medium border-b-2 transition-colors {% if tab == 'all' %}border-aegis-500 text-aegis-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+        All Asks
+      </a>
+      <a href="/asks?tab=awaiting{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
+         class="px-1 pb-3 text-sm font-medium border-b-2 transition-colors {% if tab == 'awaiting' %}border-aegis-500 text-aegis-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+        Awaiting Response
+      </a>
+    </nav>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" action="/asks" class="flex flex-wrap items-center gap-2">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% if tab != 'awaiting' %}
+    <select name="status" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      <option value="">All Statuses</option>
+      <option value="open" {% if status == 'open' %}selected{% endif %}>Open</option>
+      <option value="in_progress" {% if status == 'in_progress' %}selected{% endif %}>In Progress</option>
+      <option value="completed" {% if status == 'completed' %}selected{% endif %}>Completed</option>
+      <option value="stale" {% if status == 'stale' %}selected{% endif %}>Stale</option>
+    </select>
+    {% endif %}
+    <select name="urgency" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      <option value="">All Urgency</option>
+      <option value="high" {% if urgency == 'high' %}selected{% endif %}>High</option>
+      <option value="medium" {% if urgency == 'medium' %}selected{% endif %}>Medium</option>
+      <option value="low" {% if urgency == 'low' %}selected{% endif %}>Low</option>
+    </select>
+    <select name="ask_type" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      <option value="">All Types</option>
+      <option value="deliverable" {% if ask_type == 'deliverable' %}selected{% endif %}>Deliverable</option>
+      <option value="decision" {% if ask_type == 'decision' %}selected{% endif %}>Decision</option>
+      <option value="follow_up" {% if ask_type == 'follow_up' %}selected{% endif %}>Follow Up</option>
+      <option value="question" {% if ask_type == 'question' %}selected{% endif %}>Question</option>
+      <option value="approval" {% if ask_type == 'approval' %}selected{% endif %}>Approval</option>
+      <option value="review" {% if ask_type == 'review' %}selected{% endif %}>Review</option>
+      <option value="info_request" {% if ask_type == 'info_request' %}selected{% endif %}>Info Request</option>
+    </select>
+    <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
+      Filter
+    </button>
+    {% if status or urgency or ask_type %}
+    <a href="/asks?tab={{ tab }}" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- Table -->
+  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    {% if asks %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Description</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Requester</th>
+            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Target</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Urgency</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Source</th>
+            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for ask in asks %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-4 text-sm text-gray-900 max-w-sm">
+              <p class="truncate">{{ ask.description }}</p>
+              {% if ask.deadline %}
+              <p class="mt-0.5 text-xs text-gray-400">Deadline: {{ ask.deadline }}</p>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center">
+              {% set type_colors = {'deliverable': 'bg-blue-50 text-blue-700', 'decision': 'bg-red-50 text-red-700', 'follow_up': 'bg-yellow-50 text-yellow-700', 'question': 'bg-aegis-50 text-aegis-700', 'approval': 'bg-orange-50 text-orange-700', 'review': 'bg-purple-50 text-purple-700', 'info_request': 'bg-cyan-50 text-cyan-700'} %}
+              <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {{ type_colors.get(ask.ask_type, 'bg-gray-100 text-gray-600') }}">
+                {{ ask.ask_type | replace('_', ' ') | title }}
+              </span>
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-700">
+              {% if ask.requester_id and person_map.get(ask.requester_id) %}
+                {{ person_map[ask.requester_id].name }}
+              {% else %}
+                <span class="text-gray-400">--</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-700">
+              {% if ask.target_id and person_map.get(ask.target_id) %}
+                {{ person_map[ask.target_id].name }}
+              {% else %}
+                <span class="text-gray-400">--</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center">
+              {% set urgency_colors = {'high': 'bg-red-50 text-red-700', 'medium': 'bg-yellow-50 text-yellow-700', 'low': 'bg-green-50 text-green-700'} %}
+              <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {{ urgency_colors.get(ask.urgency, 'bg-gray-100 text-gray-600') }}">
+                {{ ask.urgency | title }}
+              </span>
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center"
+                id="ask-status-{{ ask.source_type }}-{{ ask.id }}">
+              {% set status_colors = {'open': 'bg-yellow-50 text-yellow-700', 'in_progress': 'bg-blue-50 text-blue-700', 'completed': 'bg-green-50 text-green-700', 'stale': 'bg-red-50 text-red-600'} %}
+              <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {{ status_colors.get(ask.status, 'bg-gray-100 text-gray-600') }}">
+                {{ ask.status | replace('_', ' ') | title }}
+              </span>
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center">
+              {% if ask.source_type == 'email' %}
+              <a href="/emails/{{ ask.source_id }}" class="text-aegis-600 hover:text-aegis-800 text-xs font-medium">
+                Email
+              </a>
+              {% else %}
+              <span class="text-xs text-gray-500">Chat</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-center">
+              {% if ask.status != 'completed' %}
+              <div x-data="{ open: false }" class="relative inline-block">
+                <button @click="open = !open" class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
+                  Update
+                </button>
+                <div x-show="open" @click.away="open = false"
+                     class="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {% for s in ['open', 'in_progress', 'completed', 'stale'] %}
+                    {% if s != ask.status %}
+                    <form hx-post="/asks/{{ ask.source_type }}/{{ ask.id }}/status"
+                          hx-target="#ask-status-{{ ask.source_type }}-{{ ask.id }}"
+                          hx-swap="innerHTML"
+                          @htmx:afterRequest="open = false">
+                      <input type="hidden" name="new_status" value="{{ s }}">
+                      <button type="submit" class="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50">
+                        {{ s | replace('_', ' ') | title }}
+                      </button>
+                    </form>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="flex items-center justify-between border-t border-gray-200 bg-white px-6 py-3">
+      <p class="text-sm text-gray-500">
+        Page {{ page }} of {{ total_pages }}
+      </p>
+      <div class="flex items-center gap-2">
+        {% if page > 1 %}
+        <a href="/asks?tab={{ tab }}&page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
+           class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if page < total_pages %}
+        <a href="/asks?tab={{ tab }}&page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
+           class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="px-6 py-16 text-center">
+      <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <p class="mt-4 text-sm text-gray-500">
+        {% if status or urgency or ask_type %}No asks matching your filters{% else %}No asks yet{% endif %}
+      </p>
+      <p class="mt-1 text-xs text-gray-400">Asks will populate after email and chat extraction runs</p>
+    </div>
+    {% endif %}
+  </div>
+
 </div>
 {% endblock %}

@@ -8,13 +8,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.db.models import (
     ActionItem,
+    ChatAsk,
+    ChatMessage,
+    ChatMessageTopic,
     Commitment,
     Decision,
+    Department,
+    Email,
+    EmailAsk,
+    EmailTopic,
     Meeting,
     MeetingAttendee,
     MeetingTopic,
     Person,
     SystemHealth,
+    Team,
+    TeamChannel,
     Topic,
     Workstream,
     WorkstreamItem,
@@ -169,7 +178,7 @@ async def upsert_system_health(
 async def reset_stuck_processing(session: AsyncSession) -> int:
     """Reset items stuck in 'processing' back to 'pending'. Returns count."""
     count = 0
-    for model in [Meeting]:  # extend with Email, ChatMessage in Phase 3
+    for model in [Meeting, Email, ChatMessage]:
         stmt = (
             update(model)
             .where(model.processing_status == "processing")
@@ -505,3 +514,469 @@ async def update_action_item_status(
     )
     await session.execute(stmt)
     await session.commit()
+
+
+# ── Teams & Chat Messages (Phase 3) ──────────────────────
+
+
+async def get_chat_message_by_id(
+    session: AsyncSession, message_id: int
+) -> ChatMessage | None:
+    """Fetch a chat message by ID."""
+    return await session.get(ChatMessage, message_id)
+
+
+async def get_chat_messages_for_channel(
+    session: AsyncSession,
+    channel_id: int,
+    since: datetime | None = None,
+    page: int = 1,
+    per_page: int = 50,
+) -> tuple[list[ChatMessage], int]:
+    """Fetch chat messages for a channel with pagination."""
+    stmt = (
+        select(ChatMessage)
+        .where(ChatMessage.channel_id == channel_id)
+        .order_by(ChatMessage.datetime_.desc())
+    )
+    if since:
+        stmt = stmt.where(ChatMessage.datetime_ >= since)
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar() or 0
+
+    stmt = stmt.offset((page - 1) * per_page).limit(per_page)
+    result = await session.execute(stmt)
+    return list(result.scalars().all()), total
+
+
+async def get_pending_chat_messages(
+    session: AsyncSession, limit: int = 100
+) -> list[ChatMessage]:
+    """Fetch chat messages with processing_status='pending' (non-noise)."""
+    stmt = (
+        select(ChatMessage)
+        .where(
+            ChatMessage.processing_status == "pending",
+            ChatMessage.noise_filtered == False,  # noqa: E712
+        )
+        .order_by(ChatMessage.datetime_)
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_chat_asks(
+    session: AsyncSession,
+    status: str | None = None,
+    target_id: int | None = None,
+    page: int = 1,
+    per_page: int = 25,
+) -> tuple[list[ChatAsk], int]:
+    """Fetch chat asks with filters and pagination."""
+    stmt = select(ChatAsk).order_by(ChatAsk.created.desc())
+    if status:
+        stmt = stmt.where(ChatAsk.status == status)
+    if target_id:
+        stmt = stmt.where(ChatAsk.target_id == target_id)
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar() or 0
+
+    stmt = stmt.offset((page - 1) * per_page).limit(per_page)
+    result = await session.execute(stmt)
+    return list(result.scalars().all()), total
+
+
+async def get_chat_messages_for_meeting(
+    session: AsyncSession, meeting_id: int
+) -> list[ChatMessage]:
+    """Fetch Teams chat messages linked to a specific meeting."""
+    stmt = (
+        select(ChatMessage)
+        .where(ChatMessage.linked_meeting_id == meeting_id)
+        .order_by(ChatMessage.datetime_)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_teams_list(session: AsyncSession) -> list[Team]:
+    """Fetch all teams."""
+    stmt = select(Team).order_by(Team.name)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_team_channels_list(
+    session: AsyncSession, team_id: int
+) -> list[TeamChannel]:
+    """Fetch channels for a team."""
+    stmt = (
+        select(TeamChannel)
+        .where(TeamChannel.team_id == team_id)
+        .order_by(TeamChannel.name)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def link_chat_message_topics(
+    session: AsyncSession, message_id: int, topic_ids: list[int]
+) -> None:
+    """Link topics to a chat message (idempotent)."""
+    for topic_id in topic_ids:
+        stmt = pg_insert(ChatMessageTopic).values(
+            chat_message_id=message_id, topic_id=topic_id
+        )
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["chat_message_id", "topic_id"]
+        )
+        await session.execute(stmt)
+
+
+# ── Emails ──────────────────────────────────────────────
+
+
+async def get_emails(
+    session: AsyncSession,
+    email_class: str | None = None,
+    intent: str | None = None,
+    triage_class: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+) -> tuple[list[Email], int]:
+    """Fetch emails with filters and pagination. Returns (emails, total_count)."""
+    stmt = select(Email).order_by(Email.datetime_.desc())
+
+    if email_class:
+        stmt = stmt.where(Email.email_class == email_class)
+    if intent:
+        stmt = stmt.where(Email.intent == intent)
+    if triage_class:
+        stmt = stmt.where(Email.triage_class == triage_class)
+    if search:
+        stmt = stmt.where(Email.subject.ilike(f"%{search}%"))
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar() or 0
+
+    stmt = stmt.offset((page - 1) * per_page).limit(per_page)
+    result = await session.execute(stmt)
+    items = list(result.scalars().all())
+
+    return items, total
+
+
+async def get_email_by_id(session: AsyncSession, email_id: int) -> Email | None:
+    """Fetch an email by ID."""
+    return await session.get(Email, email_id)
+
+
+async def get_email_asks_for_email(
+    session: AsyncSession, email_id: int
+) -> list[EmailAsk]:
+    """Fetch all asks associated with an email."""
+    stmt = (
+        select(EmailAsk)
+        .where(EmailAsk.email_id == email_id)
+        .order_by(EmailAsk.created.asc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def update_email_extraction(
+    session: AsyncSession,
+    email_id: int,
+    summary: str,
+    intent: str,
+    requires_response: bool,
+    sentiment: str,
+    embedding: list[float],
+) -> None:
+    """Update an email with extraction results."""
+    from datetime import timezone
+
+    stmt = (
+        update(Email)
+        .where(Email.id == email_id)
+        .values(
+            summary=summary,
+            intent=intent,
+            requires_response=requires_response,
+            sentiment=sentiment,
+            embedding=embedding,
+            last_extracted_at=datetime.now(timezone.utc),
+            processing_status="completed",
+        )
+    )
+    await session.execute(stmt)
+
+
+async def link_email_topics(
+    session: AsyncSession, email_id: int, topic_ids: list[int]
+) -> None:
+    """Link topics to an email (idempotent)."""
+    for topic_id in topic_ids:
+        stmt = pg_insert(EmailTopic).values(
+            email_id=email_id, topic_id=topic_id
+        )
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["email_id", "topic_id"]
+        )
+        await session.execute(stmt)
+
+
+# ── Asks (Email + Chat combined) ───────────────────────
+
+
+async def get_all_asks(
+    session: AsyncSession,
+    status: str | None = None,
+    urgency: str | None = None,
+    ask_type: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+) -> tuple[list[dict], int]:
+    """Fetch combined email_asks + chat_asks with filters and pagination.
+
+    Returns (list of ask dicts with source info, total_count).
+    """
+    ea_stmt = select(EmailAsk).order_by(EmailAsk.created.desc())
+    ca_stmt = select(ChatAsk).order_by(ChatAsk.created.desc())
+
+    if status:
+        ea_stmt = ea_stmt.where(EmailAsk.status == status)
+        ca_stmt = ca_stmt.where(ChatAsk.status == status)
+    if urgency:
+        ea_stmt = ea_stmt.where(EmailAsk.urgency == urgency)
+        ca_stmt = ca_stmt.where(ChatAsk.urgency == urgency)
+    if ask_type:
+        ea_stmt = ea_stmt.where(EmailAsk.ask_type == ask_type)
+        ca_stmt = ca_stmt.where(ChatAsk.ask_type == ask_type)
+
+    ea_count = (
+        await session.execute(select(func.count()).select_from(ea_stmt.subquery()))
+    ).scalar() or 0
+    ca_count = (
+        await session.execute(select(func.count()).select_from(ca_stmt.subquery()))
+    ).scalar() or 0
+    total = ea_count + ca_count
+
+    ea_result = await session.execute(ea_stmt)
+    ca_result = await session.execute(ca_stmt)
+
+    email_asks = list(ea_result.scalars().all())
+    chat_asks = list(ca_result.scalars().all())
+
+    combined: list[dict] = []
+    for ea in email_asks:
+        combined.append({
+            "id": ea.id,
+            "description": ea.description,
+            "ask_type": ea.ask_type,
+            "requester_id": ea.requester_id,
+            "target_id": ea.target_id,
+            "urgency": ea.urgency,
+            "status": ea.status,
+            "deadline": ea.deadline,
+            "created": ea.created,
+            "source_type": "email",
+            "source_id": ea.email_id,
+        })
+    for ca in chat_asks:
+        combined.append({
+            "id": ca.id,
+            "description": ca.description,
+            "ask_type": ca.ask_type,
+            "requester_id": ca.requester_id,
+            "target_id": ca.target_id,
+            "urgency": ca.urgency,
+            "status": ca.status,
+            "deadline": ca.deadline,
+            "created": ca.created,
+            "source_type": "chat",
+            "source_id": ca.message_id,
+        })
+
+    combined.sort(key=lambda x: x["created"] or datetime.min, reverse=True)
+
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_items = combined[start:end]
+
+    return page_items, total
+
+
+async def update_email_ask_status(
+    session: AsyncSession, ask_id: int, new_status: str
+) -> None:
+    """Update the status of an email ask."""
+    stmt = (
+        update(EmailAsk)
+        .where(EmailAsk.id == ask_id)
+        .values(status=new_status, updated=datetime.utcnow())
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+
+async def update_chat_ask_status(
+    session: AsyncSession, ask_id: int, new_status: str
+) -> None:
+    """Update the status of a chat ask."""
+    stmt = (
+        update(ChatAsk)
+        .where(ChatAsk.id == ask_id)
+        .values(status=new_status, updated=datetime.utcnow())
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+
+# ── Departments ────────────────────────────────────────
+
+
+async def get_departments(session: AsyncSession) -> list[Department]:
+    """Fetch all departments ordered by name."""
+    stmt = select(Department).order_by(Department.name)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_department_by_id(
+    session: AsyncSession, dept_id: int
+) -> Department | None:
+    """Fetch a single department by ID."""
+    return await session.get(Department, dept_id)
+
+
+async def get_department_members(
+    session: AsyncSession, dept_id: int
+) -> list[Person]:
+    """Fetch all people belonging to a department."""
+    stmt = (
+        select(Person)
+        .where(Person.department_id == dept_id)
+        .order_by(Person.name)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_department_member_count(
+    session: AsyncSession, dept_id: int
+) -> int:
+    """Count members in a department."""
+    stmt = (
+        select(func.count())
+        .select_from(Person)
+        .where(Person.department_id == dept_id)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one()
+
+
+async def get_department_open_items(
+    session: AsyncSession, dept_id: int
+) -> dict:
+    """Count open action_items + email_asks + chat_asks for department members.
+
+    Returns dict with keys: open_action_items, open_email_asks, open_chat_asks,
+    overdue_action_items, total_open, total_overdue
+    """
+    member_ids_stmt = select(Person.id).where(Person.department_id == dept_id)
+    member_result = await session.execute(member_ids_stmt)
+    member_ids = [row for row in member_result.scalars().all()]
+
+    if not member_ids:
+        return {
+            "open_action_items": 0,
+            "open_email_asks": 0,
+            "open_chat_asks": 0,
+            "overdue_action_items": 0,
+            "total_open": 0,
+            "total_overdue": 0,
+        }
+
+    ai_stmt = (
+        select(func.count())
+        .select_from(ActionItem)
+        .where(
+            ActionItem.assignee_id.in_(member_ids),
+            ActionItem.status.in_(["open", "in_progress"]),
+        )
+    )
+    open_action_items = (await session.execute(ai_stmt)).scalar_one()
+
+    stale_ai_stmt = (
+        select(func.count())
+        .select_from(ActionItem)
+        .where(
+            ActionItem.assignee_id.in_(member_ids),
+            ActionItem.status == "stale",
+        )
+    )
+    overdue_action_items = (await session.execute(stale_ai_stmt)).scalar_one()
+
+    ea_stmt = (
+        select(func.count())
+        .select_from(EmailAsk)
+        .where(
+            EmailAsk.target_id.in_(member_ids),
+            EmailAsk.status.in_(["open", "in_progress"]),
+        )
+    )
+    open_email_asks = (await session.execute(ea_stmt)).scalar_one()
+
+    ca_stmt = (
+        select(func.count())
+        .select_from(ChatAsk)
+        .where(
+            ChatAsk.target_id.in_(member_ids),
+            ChatAsk.status.in_(["open", "in_progress"]),
+        )
+    )
+    open_chat_asks = (await session.execute(ca_stmt)).scalar_one()
+
+    total_open = open_action_items + open_email_asks + open_chat_asks
+
+    return {
+        "open_action_items": open_action_items,
+        "open_email_asks": open_email_asks,
+        "open_chat_asks": open_chat_asks,
+        "overdue_action_items": overdue_action_items,
+        "total_open": total_open,
+        "total_overdue": overdue_action_items,
+    }
+
+
+async def get_department_workstreams(
+    session: AsyncSession, dept_id: int
+) -> list[Workstream]:
+    """Fetch active workstreams that involve department members as stakeholders."""
+    member_ids_stmt = select(Person.id).where(Person.department_id == dept_id)
+    member_result = await session.execute(member_ids_stmt)
+    member_ids = [row for row in member_result.scalars().all()]
+
+    if not member_ids:
+        return []
+
+    stmt = (
+        select(Workstream)
+        .join(
+            WorkstreamStakeholder,
+            WorkstreamStakeholder.workstream_id == Workstream.id,
+        )
+        .where(
+            WorkstreamStakeholder.person_id.in_(member_ids),
+            Workstream.status.in_(["active", "quiet"]),
+        )
+        .distinct()
+        .order_by(Workstream.updated.desc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
