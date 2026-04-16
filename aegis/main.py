@@ -65,6 +65,50 @@ async def _run_processing_cycle() -> None:
         if count:
             logger.info("Extraction: processed %d meetings", count)
 
+        # Step 2b: Extract substantive emails
+        from aegis.processing.email_extractor import extract_email, store_email_extraction
+        from aegis.processing.resolver import resolve_extracted_entities
+
+        async with async_session_factory() as session:
+            from sqlalchemy import select, update
+            from aegis.db.models import Email
+
+            stmt = select(Email).where(
+                Email.triage_class == "substantive",
+                Email.processing_status == "pending",
+            ).limit(20)  # Process up to 20 per cycle to limit cost
+            result = await session.execute(stmt)
+            substantive_emails = list(result.scalars().all())
+
+            for email in substantive_emails:
+                try:
+                    await session.execute(
+                        update(Email).where(Email.id == email.id)
+                        .values(processing_status="processing")
+                    )
+                    await session.commit()
+
+                    extraction = await extract_email(session, email.id)
+                    if extraction:
+                        await resolve_extracted_entities(session, 0, extraction)
+                        await store_email_extraction(session, email.id, extraction)
+
+                    await session.execute(
+                        update(Email).where(Email.id == email.id)
+                        .values(processing_status="completed")
+                    )
+                    await session.commit()
+                except Exception:
+                    logger.exception("Email extraction failed for email %d", email.id)
+                    await session.execute(
+                        update(Email).where(Email.id == email.id)
+                        .values(processing_status="failed")
+                    )
+                    await session.commit()
+
+            if substantive_emails:
+                logger.info("Extraction: processed %d substantive emails", len(substantive_emails))
+
         # Step 3: Workstream assignment
         async with async_session_factory() as session:
             stats = await run_workstream_assignment(session)
