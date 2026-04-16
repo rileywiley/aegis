@@ -281,12 +281,17 @@ class GraphClient:
         since: str | None = None,
         top: int = 50,
     ) -> list[dict]:
-        """Fetch messages from a Teams channel."""
+        """Fetch messages from a Teams channel.
+
+        Note: Channel messages endpoint has limited $filter support.
+        We filter by date in Python to avoid 400 errors.
+        """
         url = f"{GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages"
         params: dict = {"$top": str(top)}
+        messages = await self._get_paginated(url, params=params)
         if since:
-            params["$filter"] = f"createdDateTime ge {since}"
-        return await self._get_paginated(url, params=params)
+            messages = [m for m in messages if m.get("createdDateTime", "") >= since]
+        return messages
 
     async def get_chats(self) -> list[dict]:
         """GET /me/chats — list all chats (1:1, group, meeting)."""
@@ -300,12 +305,18 @@ class GraphClient:
         since: str | None = None,
         top: int = 50,
     ) -> list[dict]:
-        """Fetch messages from a specific chat."""
+        """Fetch messages from a specific chat.
+
+        Note: The /me/chats/{id}/messages endpoint does NOT support $filter.
+        We fetch all messages and filter by date in Python if `since` is provided.
+        """
         url = f"{GRAPH_BASE_URL}/me/chats/{chat_id}/messages"
         params: dict = {"$top": str(top)}
+        # Do NOT pass $filter — this endpoint doesn't support it
+        messages = await self._get_paginated(url, params=params)
         if since:
-            params["$filter"] = f"createdDateTime ge {since}"
-        return await self._get_paginated(url, params=params)
+            messages = [m for m in messages if m.get("createdDateTime", "") >= since]
+        return messages
 
     async def close(self) -> None:
         """Shut down the underlying httpx client."""
