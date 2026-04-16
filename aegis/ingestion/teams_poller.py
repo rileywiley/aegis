@@ -387,16 +387,21 @@ class TeamsPoller:
         session.add(chat_msg)
         await session.flush()
 
-        # Store attachment metadata
+        # Store attachment metadata (skip non-file attachments like messageReference)
         attachments = msg.get("attachments", [])
         for att in attachments:
+            filename = att.get("name") or att.get("fileName")
+            content_type = att.get("contentType", "")
+            # Skip non-file attachments (message references, adaptive cards, etc.)
+            if not filename or content_type in ("messageReference", "application/vnd.microsoft.card.adaptive"):
+                continue
             att_record = Attachment(
                 source_type="chat_message",
                 source_id=chat_msg.id,
                 graph_attachment_id=att.get("id"),
-                filename=att.get("name", "unknown"),
-                content_type=att.get("contentType"),
-                size_bytes=None,  # Graph chat attachments don't always include size
+                filename=filename,
+                content_type=content_type,
+                size_bytes=None,
                 is_inline=False,
             )
             session.add(att_record)

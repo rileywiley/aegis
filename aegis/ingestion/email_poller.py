@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -74,9 +74,12 @@ class EmailPoller:
 
     async def _do_poll(self, session: AsyncSession) -> int:
         last_seen = await self._get_last_seen(session)
-        since_str = last_seen.isoformat() if last_seen else None
+        if not last_seen:
+            # First run: only fetch last 7 days instead of entire inbox
+            last_seen = datetime.now(timezone.utc) - timedelta(days=7)
+        since_str = last_seen.isoformat()
 
-        logger.info("Email poll: fetching messages since %s", since_str or "beginning")
+        logger.info("Email poll: fetching messages since %s", since_str)
         messages = await self._graph.get_messages(folder="inbox", since=since_str)
         logger.info("Email poll: received %d messages from Graph API", len(messages))
 
