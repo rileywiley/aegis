@@ -250,15 +250,22 @@ async def store_email_extraction(
     resolved_people: dict[str, int] = extraction.get("_resolved_people", {})
 
     # ── Email Asks ──────────────────────────────────────────
+    VALID_ASK_TYPES = {"deliverable", "decision", "follow_up", "question", "approval", "review", "info_request"}
+
     for ask in parsed.asks:
         requester_id = resolved_people.get(ask.requester_name)
         target_id = resolved_people.get(ask.target_name)
+
+        # Validate ask_type — map invalid LLM values to closest valid type
+        ask_type = ask.ask_type
+        if ask_type not in VALID_ASK_TYPES:
+            ask_type = {"scheduling": "follow_up", "action": "deliverable", "update": "info_request", "request": "deliverable"}.get(ask_type, "info_request")
 
         embedding = await embed_text(ask.description)
         email_ask = EmailAsk(
             email_id=email_id,
             thread_id=thread_id,
-            ask_type=ask.ask_type,
+            ask_type=ask_type,
             description=ask.description,
             requester_id=requester_id,
             target_id=target_id,

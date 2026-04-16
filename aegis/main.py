@@ -100,6 +100,7 @@ async def _run_processing_cycle() -> None:
                     await session.commit()
                 except Exception:
                     logger.exception("Email extraction failed for email %d", email.id)
+                    await session.rollback()
                     await session.execute(
                         update(Email).where(Email.id == email.id)
                         .values(processing_status="failed")
