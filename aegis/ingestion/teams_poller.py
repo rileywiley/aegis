@@ -346,17 +346,36 @@ class TeamsPoller:
         # Noise filter
         noise = is_noise_message(msg, settings.teams_min_message_length)
 
-        # Resolve sender
+        # Resolve sender — try email first, fall back to display name match
         sender_id = None
         sender = msg.get("from", {})
         user_info = sender.get("user", {}) if sender else {}
         sender_email = user_info.get("email") or user_info.get("userPrincipalName")
         sender_name = user_info.get("displayName", "")
-        if sender_email and sender_name:
+        if sender_email:
             person = await get_or_create_person_by_email(
-                session, email=sender_email, name=sender_name, source="teams"
+                session, email=sender_email, name=sender_name or sender_email, source="teams"
             )
             sender_id = person.id
+        elif sender_name:
+            # No email — try fuzzy match by display name against existing people
+            from rapidfuzz import fuzz
+            from aegis.db.models import Person
+            stmt = select(Person).where(Person.name.ilike(f"%{sender_name[:20]}%")).limit(5)
+            matches = (await session.execute(stmt)).scalars().all()
+            best = None
+            for p in matches:
+                if fuzz.ratio(sender_name.lower(), p.name.lower()) >= 80:
+                    best = p
+                    break
+            if best:
+                sender_id = best.id
+            else:
+                # Create stub person without email
+                person = Person(name=sender_name, source="teams", needs_review=True, confidence=0.3)
+                session.add(person)
+                await session.flush()
+                sender_id = person.id
 
         # Link meeting chats
         linked_meeting_id = None
