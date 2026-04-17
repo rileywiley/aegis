@@ -93,8 +93,8 @@ async def _get_person_email_sentiments(
         select(Email.sentiment)
         .where(
             Email.sender_id == person_id,
-            Email.datetime >= since,
-            Email.datetime < until,
+            Email.datetime_ >= since,
+            Email.datetime_ < until,
             Email.sentiment.isnot(None),
         )
     )
@@ -115,8 +115,8 @@ async def _get_person_chat_sentiments(
         select(ChatMessage.sentiment)
         .where(
             ChatMessage.sender_id == person_id,
-            ChatMessage.datetime >= since,
-            ChatMessage.datetime < until,
+            ChatMessage.datetime_ >= since,
+            ChatMessage.datetime_ < until,
             ChatMessage.sentiment.isnot(None),
         )
     )
@@ -356,7 +356,7 @@ async def compute_sentiment_aggregations(session: AsyncSession) -> dict:
             )
             .where(
                 WorkstreamItem.workstream_id == ws_id,
-                Email.datetime >= window_start,
+                Email.datetime_ >= window_start,
                 Email.sentiment.isnot(None),
             )
         )

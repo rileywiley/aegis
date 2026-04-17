@@ -33,7 +33,7 @@ from aegis.intelligence.meeting_prep import generate_meeting_prep
 
 logger = logging.getLogger("aegis.briefings")
 
-SONNET_MODEL = "claude-sonnet-4-6-20250514"
+SONNET_MODEL = "claude-haiku-4-5-20251001"
 
 
 # ── LLM usage tracking ──────────────────────────────────────
