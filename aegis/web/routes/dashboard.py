@@ -414,6 +414,25 @@ async def refresh_dashboard_cache() -> None:
     """Refresh all dashboard cache keys. Called by APScheduler every 15 min."""
     from aegis.db.engine import async_session_factory
 
+    async def _compute_todays_meetings(session):
+        start_utc, end_utc = _today_range_utc()
+        meetings = await get_meetings_for_range(session, start_utc, end_utc)
+        return {"items": [{"id": m.id, "title": m.title, "start_time": m.start_time.isoformat(), "status": m.status} for m in meetings]}
+
+    async def _compute_readiness_scores(session):
+        try:
+            from aegis.intelligence.readiness import compute_all_readiness
+            scores = await compute_all_readiness(session)
+            return {"scores": [s.model_dump() for s in scores]}
+        except Exception:
+            return {"scores": []}
+
+    async def _compute_department_health(session):
+        from aegis.db.models import Department
+        result = await session.execute(select(Department).limit(20))
+        depts = list(result.scalars().all())
+        return {"departments": [{"id": d.id, "name": d.name} for d in depts]}
+
     async with async_session_factory() as session:
         for key, fn in [
             ("workstream_cards", _compute_workstream_cards),
@@ -421,6 +440,9 @@ async def refresh_dashboard_cache() -> None:
             ("awaiting_response", _compute_awaiting_response),
             ("stale_items", _compute_stale_items),
             ("drafts_pending", _compute_drafts_pending),
+            ("todays_meetings", _compute_todays_meetings),
+            ("readiness_scores", _compute_readiness_scores),
+            ("department_health", _compute_department_health),
         ]:
             try:
                 data = await fn(session)
