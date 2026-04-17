@@ -110,10 +110,56 @@ async def _run_processing_cycle() -> None:
             if substantive_emails:
                 logger.info("Extraction: processed %d substantive emails", len(substantive_emails))
 
+        # Step 2c: Generate embeddings for substantive chat messages (no LLM extraction yet)
+        from aegis.processing.embeddings import embed_text
+
+        async with async_session_factory() as session:
+            from sqlalchemy import select, update
+            from aegis.db.models import ChatMessage
+
+            stmt = select(ChatMessage).where(
+                ChatMessage.triage_class.in_(["substantive", "contextual"]),
+                ChatMessage.embedding.is_(None),
+                ChatMessage.noise_filtered.is_(False),
+            ).limit(50)
+            result = await session.execute(stmt)
+            chats_needing_embed = list(result.scalars().all())
+
+            for chat in chats_needing_embed:
+                try:
+                    text = chat.body_text or chat.body_preview or ""
+                    if text.strip():
+                        emb = await embed_text(text[:2000])
+                        await session.execute(
+                            update(ChatMessage).where(ChatMessage.id == chat.id)
+                            .values(embedding=emb, processing_status="completed")
+                        )
+                    else:
+                        await session.execute(
+                            update(ChatMessage).where(ChatMessage.id == chat.id)
+                            .values(processing_status="completed")
+                        )
+                except Exception:
+                    logger.debug("Chat embedding failed for %d", chat.id)
+
+            if chats_needing_embed:
+                await session.commit()
+                logger.info("Embeddings: generated for %d chat messages", len(chats_needing_embed))
+
         # Step 3: Workstream assignment
         async with async_session_factory() as session:
             stats = await run_workstream_assignment(session)
             logger.info("Workstream assignment: %s", stats)
+
+        # Step 4: Update system_health for processing services
+        from aegis.db.repositories import upsert_system_health
+        from datetime import datetime, timezone
+
+        async with async_session_factory() as session:
+            now = datetime.now(timezone.utc)
+            await upsert_system_health(session, "triage_batch", status="healthy", last_success=now)
+            await upsert_system_health(session, "extraction_pipeline", status="healthy", last_success=now)
+            await upsert_system_health(session, "workstream_detector", status="healthy", last_success=now)
 
     except Exception:
         logger.exception("Processing cycle failed")
