@@ -738,13 +738,18 @@ async def get_all_asks(
     status: str | None = None,
     urgency: str | None = None,
     ask_type: str | None = None,
+    source: str | None = None,
     page: int = 1,
     per_page: int = 25,
 ) -> tuple[list[dict], int]:
     """Fetch combined email_asks + chat_asks with filters and pagination.
 
     Returns (list of ask dicts with source info, total_count).
+    source: 'email', 'chat', or None (both).
     """
+    include_email = source in (None, "email")
+    include_chat = source in (None, "chat")
+
     ea_stmt = select(EmailAsk).order_by(EmailAsk.created.desc())
     ca_stmt = select(ChatAsk).order_by(ChatAsk.created.desc())
 
@@ -758,19 +763,26 @@ async def get_all_asks(
         ea_stmt = ea_stmt.where(EmailAsk.ask_type == ask_type)
         ca_stmt = ca_stmt.where(ChatAsk.ask_type == ask_type)
 
-    ea_count = (
-        await session.execute(select(func.count()).select_from(ea_stmt.subquery()))
-    ).scalar() or 0
-    ca_count = (
-        await session.execute(select(func.count()).select_from(ca_stmt.subquery()))
-    ).scalar() or 0
+    ea_count = 0
+    ca_count = 0
+    email_asks: list = []
+    chat_asks: list = []
+
+    if include_email:
+        ea_count = (
+            await session.execute(select(func.count()).select_from(ea_stmt.subquery()))
+        ).scalar() or 0
+        ea_result = await session.execute(ea_stmt)
+        email_asks = list(ea_result.scalars().all())
+
+    if include_chat:
+        ca_count = (
+            await session.execute(select(func.count()).select_from(ca_stmt.subquery()))
+        ).scalar() or 0
+        ca_result = await session.execute(ca_stmt)
+        chat_asks = list(ca_result.scalars().all())
+
     total = ea_count + ca_count
-
-    ea_result = await session.execute(ea_stmt)
-    ca_result = await session.execute(ca_stmt)
-
-    email_asks = list(ea_result.scalars().all())
-    chat_asks = list(ca_result.scalars().all())
 
     combined: list[dict] = []
     for ea in email_asks:

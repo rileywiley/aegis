@@ -136,12 +136,14 @@ class TestClassifyEmailNoise:
         assert result == "automated"
 
     def test_sendgrid_domain_is_newsletter(self):
+        # info@ matches automated sender patterns; sendgrid domain also matches newsletter
+        # automated check runs first, so this is classified as automated
         result = classify_email_noise(
             sender_email="info@sendgrid.net",
             body_text="Your report is ready.",
             body_preview="Your report is ready.",
         )
-        assert result == "newsletter"
+        assert result == "automated"
 
     def test_automated_takes_priority_over_newsletter(self):
         """If sender is noreply AND body has unsubscribe, automated wins (checked first)."""

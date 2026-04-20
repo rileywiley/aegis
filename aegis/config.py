@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     sentiment_trend_window_days: int = 14
     sentiment_friction_threshold: int = 60
 
+    # ── User identity ────────────────────────────────────
+    user_email: str = "delemos.ricardo@gmail.com"
+
 
 @lru_cache
 def get_settings() -> Settings:

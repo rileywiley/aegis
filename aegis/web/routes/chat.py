@@ -55,20 +55,38 @@ async def chat_page(
 async def chat_submit(
     request: Request,
     question: str = Form(...),
-    session_id: int | None = Form(None),
+    session_id: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
 ):
     """Handle a chat question via HTMX. Returns HTML fragment for the new messages."""
-    result = await ask_aegis(session, question, session_id)
+    # Convert session_id from form string to int or None
+    parsed_session_id: int | None = None
+    if session_id and session_id.strip():
+        try:
+            parsed_session_id = int(session_id)
+        except (ValueError, TypeError):
+            parsed_session_id = None
+
+    try:
+        result = await ask_aegis(session, question, parsed_session_id)
+        answer = result.get("answer", "")
+        sources = result.get("sources", [])
+        new_session_id = result.get("session_id", parsed_session_id)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("ask_aegis failed")
+        answer = f"Sorry, I encountered an error processing your question. Please try again. ({type(e).__name__})"
+        sources = []
+        new_session_id = parsed_session_id
 
     return templates.TemplateResponse(
         request,
         "components/chat_messages.html",
         {
             "question": question,
-            "answer": result["answer"],
-            "sources": result["sources"],
-            "session_id": result["session_id"],
+            "answer": answer,
+            "sources": sources,
+            "session_id": new_session_id,
         },
     )
 

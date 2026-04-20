@@ -68,11 +68,14 @@ async def readiness_page(
     # Compute scores for all active internal people with interactions
     scores = await compute_all_readiness(session)
 
-    # Build display data by joining person info
+    # Build display data by joining person info (exclude external contacts)
     person_ids = [s.person_id for s in scores]
     persons_map: dict[int, Person] = {}
     if person_ids:
-        stmt = select(Person).where(Person.id.in_(person_ids))
+        stmt = select(Person).where(
+            Person.id.in_(person_ids),
+            Person.is_external.is_(False),
+        )
         result = await session.execute(stmt)
         for p in result.scalars().all():
             persons_map[p.id] = p

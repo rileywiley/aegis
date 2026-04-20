@@ -118,13 +118,26 @@
       {% endif %}
     </div>
 
+    <!-- Loading indicator -->
+    <div id="chat-loading" class="hidden border-t border-gray-100 px-6 py-2 bg-gray-50">
+      <div class="flex items-center gap-2 text-xs text-gray-400">
+        <svg class="animate-spin h-3 w-3 text-aegis-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        Aegis is thinking...
+      </div>
+    </div>
+
     <!-- Input area -->
     <div class="border-t border-gray-100 px-6 py-4 bg-white">
       <form id="chat-form"
             hx-post="/ask"
             hx-target="#chat-messages"
             hx-swap="beforeend"
-            hx-on::after-request="this.reset(); document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight; var welcome = document.getElementById('chat-welcome'); if(welcome) welcome.remove();"
+            hx-indicator="#chat-loading"
+            hx-on::before-request="document.getElementById('chat-loading').classList.remove('hidden');"
+            hx-on::after-request="this.reset(); document.getElementById('chat-loading').classList.add('hidden'); document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight; var welcome = document.getElementById('chat-welcome'); if(welcome) welcome.remove();"
             class="flex items-end gap-3">
         <input type="hidden" name="session_id" value="{{ session_id or '' }}">
         <div class="flex-1">

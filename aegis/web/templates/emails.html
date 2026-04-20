@@ -12,7 +12,7 @@
       <h2 class="text-2xl font-bold text-gray-900">Email Browser</h2>
       <p class="mt-1 text-sm text-gray-500">{{ total }} email{{ 's' if total != 1 }} total</p>
     </div>
-    <form method="get" action="/emails" class="flex flex-wrap items-center gap-2">
+    <form method="get" action="/emails" hx-get="/emails" hx-push-url="true" hx-target="body" hx-swap="outerHTML" class="flex flex-wrap items-center gap-2">
       <div class="relative">
         <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />

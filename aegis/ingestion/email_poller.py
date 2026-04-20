@@ -40,6 +40,29 @@ _NEWSLETTER_DOMAINS = {
     "convertkit.com",
 }
 
+_AUTOMATED_DOMAINS = {
+    "lever.co",
+    "ringcentral.com",
+    "qualio.com",
+    "ramp.com",
+    "sip.com",
+    "atlassian.net",
+    "jira.com",
+    "github.com",
+    "gitlab.com",
+    "slack.com",
+    "asana.com",
+    "monday.com",
+    "zendesk.com",
+    "servicenow.com",
+    "salesforce.com",
+}
+
+_AUTOMATED_SENDER_PATTERNS = re.compile(
+    r"(^|[.\-_])(notification|notifications|updates|alert|alerts|digest|team|system|support|info|admin)@",
+    re.IGNORECASE,
+)
+
 _UNSUBSCRIBE_PATTERN = re.compile(r"\bunsubscribe\b", re.IGNORECASE)
 
 
@@ -251,10 +274,18 @@ def classify_email_noise(
     if _NOREPLY_PATTERNS.search(sender_email):
         return "automated"
 
+    # Check sender address for automated SaaS notification patterns
+    if _AUTOMATED_SENDER_PATTERNS.search(sender_email):
+        return "automated"
+
     # Check sender domain for known marketing platforms
     domain = sender_email.split("@")[-1].lower() if "@" in sender_email else ""
     if domain in _NEWSLETTER_DOMAINS:
         return "newsletter"
+
+    # Check sender domain for known SaaS/automated platforms
+    if domain in _AUTOMATED_DOMAINS:
+        return "automated"
 
     # Check for unsubscribe links in body
     text_to_check = body_text or body_preview or ""

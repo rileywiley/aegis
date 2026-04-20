@@ -4,7 +4,7 @@ import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -208,4 +208,64 @@ async def dismiss_person(
     return HTMLResponse(
         f'<div id="review-card-{person_id}" class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">'
         f"Dismissed</div>"
+    )
+
+
+@router.get("/people/{person_id}/edit-form", response_class=HTMLResponse)
+async def edit_person_form(
+    request: Request,
+    person_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """HTMX partial: inline edit form for a person in the review queue."""
+    person = await session.get(Person, person_id)
+    if not person:
+        return HTMLResponse('<div class="text-red-600 text-sm">Person not found</div>')
+
+    dept_stmt = select(Department).order_by(Department.name)
+    dept_result = await session.execute(dept_stmt)
+    departments = list(dept_result.scalars().all())
+
+    return templates.TemplateResponse(
+        request,
+        "components/people_edit_form.html",
+        {
+            "person": person,
+            "departments": departments,
+        },
+    )
+
+
+@router.post("/people/{person_id}/edit", response_class=HTMLResponse)
+async def edit_person(
+    request: Request,
+    person_id: int,
+    session: AsyncSession = Depends(get_session),
+    name: str = Form(...),
+    title: str = Form(""),
+    role: str = Form(""),
+    seniority: str = Form("unknown"),
+    department_id: str = Form(""),
+):
+    """Apply manual edits and mark as reviewed."""
+    person = await session.get(Person, person_id)
+    if not person:
+        return HTMLResponse('<div class="text-red-600 text-sm">Person not found</div>')
+
+    person.name = name.strip()
+    person.title = title.strip() or None
+    person.role = role.strip() or None
+    if seniority in ("executive", "senior", "mid", "junior", "unknown"):
+        person.seniority = seniority
+    if department_id and department_id.isdigit():
+        person.department_id = int(department_id)
+    else:
+        person.department_id = None
+    person.needs_review = False
+
+    await session.commit()
+
+    return HTMLResponse(
+        f'<div id="review-card-{person_id}" class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">'
+        f"Updated: {person.name}</div>"
     )

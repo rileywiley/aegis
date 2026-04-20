@@ -15,42 +15,78 @@ from aegis.db.repositories import (
     update_chat_ask_status,
     update_email_ask_status,
 )
+from aegis.db.models import Person
 from aegis.web import templates
+from sqlalchemy import select
 
 router = APIRouter(prefix="/asks")
 settings = get_settings()
+
+_STATUS_OPTIONS = ["open", "in_progress", "completed", "stale"]
+_STATUS_COLORS = {
+    "open": "bg-yellow-50 text-yellow-700",
+    "in_progress": "bg-blue-50 text-blue-700",
+    "completed": "bg-green-50 text-green-700",
+    "stale": "bg-red-50 text-red-600",
+}
+_STATUS_LABELS = {
+    "open": "Open",
+    "in_progress": "In Progress",
+    "completed": "Completed",
+    "stale": "Stale",
+}
 
 
 def _local_tz() -> ZoneInfo:
     return ZoneInfo(settings.aegis_timezone)
 
 
+async def _get_user_person_id(session: AsyncSession) -> int | None:
+    """Look up the user's person_id from their configured email."""
+    user_email = settings.user_email
+    if not user_email:
+        return None
+    stmt = select(Person.id).where(Person.email == user_email)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 @router.get("")
 async def asks_list(
     request: Request,
-    tab: str = Query("all", description="Tab: all or awaiting"),
+    tab: str = Query("all", description="Tab: all, inbound, or outbound"),
     status: str = Query("", description="Filter by status"),
     urgency: str = Query("", description="Filter by urgency"),
     ask_type: str = Query("", description="Filter by ask type"),
+    source: str = Query("", description="Filter by source: all, email, chat"),
     page: int = Query(1, ge=1),
     session: AsyncSession = Depends(get_session),
 ):
     per_page = 25
     tz = _local_tz()
 
-    # For "awaiting" tab, force status to open
+    # Resolve user person_id for directionality filtering
+    user_person_id = await _get_user_person_id(session)
+
     effective_status = status or None
-    if tab == "awaiting":
-        effective_status = "open"
 
     asks, total = await get_all_asks(
         session,
         status=effective_status,
         urgency=urgency or None,
         ask_type=ask_type or None,
+        source=source or None,
         page=page,
         per_page=per_page,
     )
+
+    # Apply directionality filter based on tab
+    if tab == "inbound" and user_person_id:
+        asks = [a for a in asks if a.get("target_id") == user_person_id]
+        total = len(asks)
+    elif tab == "outbound" and user_person_id:
+        asks = [a for a in asks if a.get("requester_id") == user_person_id]
+        total = len(asks)
 
     # Collect person IDs for name lookup
     person_ids = set()
@@ -74,11 +110,15 @@ async def asks_list(
             "status": status,
             "urgency": urgency,
             "ask_type": ask_type,
+            "source": source,
             "page": page,
             "total_pages": total_pages,
             "total": total,
             "current_time": now_local.strftime("%-I:%M %p %Z"),
             "tz": tz,
+            "status_options": _STATUS_OPTIONS,
+            "status_colors": _STATUS_COLORS,
+            "status_labels": _STATUS_LABELS,
         },
     )
 
@@ -103,18 +143,19 @@ async def update_ask_status(
     else:
         raise HTTPException(status_code=400, detail=f"Invalid source type: {source_type}")
 
-    # Return updated status badge via HTMX
-    badge_colors = {
-        "open": "bg-yellow-50 text-yellow-700",
-        "in_progress": "bg-blue-50 text-blue-700",
-        "completed": "bg-green-50 text-green-700",
-        "stale": "bg-red-50 text-red-600",
-    }
-    color = badge_colors.get(new_status, "bg-gray-100 text-gray-600")
-    label = new_status.replace("_", " ").title()
+    # Return click-to-cycle badge (matching actions page pattern)
+    current_idx = _STATUS_OPTIONS.index(new_status)
+    next_status = _STATUS_OPTIONS[(current_idx + 1) % len(_STATUS_OPTIONS)]
+
+    color = _STATUS_COLORS.get(new_status, "bg-gray-100 text-gray-600")
+    label = _STATUS_LABELS.get(new_status, new_status)
 
     html = (
-        f'<span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {color}">'
-        f'{label}</span>'
+        f'<form hx-post="/asks/{source_type}/{ask_id}/status" hx-swap="outerHTML" hx-target="this">'
+        f'<input type="hidden" name="new_status" value="{next_status}">'
+        f'<button type="submit" '
+        f'class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium cursor-pointer '
+        f'transition-colors hover:opacity-80 {color}">'
+        f'{label}</button></form>'
     )
     return HTMLResponse(html)

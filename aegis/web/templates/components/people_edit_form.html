@@ -1,0 +1,75 @@
+<div id="review-card-{{ person.id }}" class="rounded-xl border border-aegis-200 bg-aegis-50 shadow-sm p-5">
+  <form hx-post="/people/{{ person.id }}/edit"
+        hx-target="#review-card-{{ person.id }}"
+        hx-swap="outerHTML">
+    <div class="flex items-center gap-2 mb-4">
+      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-aegis-100 text-aegis-700 text-sm font-bold">
+        {{ person.name[0] | upper if person.name else '?' }}
+      </div>
+      <p class="text-sm font-semibold text-gray-900">Edit Person</p>
+    </div>
+
+    <div class="space-y-3">
+      <!-- Name -->
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Name</label>
+        <input type="text" name="name" value="{{ person.name }}" required
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      </div>
+
+      <!-- Title -->
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Title</label>
+        <input type="text" name="title" value="{{ person.title or '' }}"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      </div>
+
+      <!-- Role -->
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Role</label>
+        <input type="text" name="role" value="{{ person.role or '' }}"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      </div>
+
+      <!-- Seniority -->
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Seniority</label>
+        <select name="seniority"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+          <option value="executive" {{ 'selected' if person.seniority == 'executive' }}>Executive</option>
+          <option value="senior" {{ 'selected' if person.seniority == 'senior' }}>Senior</option>
+          <option value="mid" {{ 'selected' if person.seniority == 'mid' }}>Mid</option>
+          <option value="junior" {{ 'selected' if person.seniority == 'junior' }}>Junior</option>
+          <option value="unknown" {{ 'selected' if person.seniority == 'unknown' or not person.seniority }}>Unknown</option>
+        </select>
+      </div>
+
+      <!-- Department -->
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Department</label>
+        <select name="department_id"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+          <option value="">None</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}" {{ 'selected' if person.department_id == dept.id }}>{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="mt-4 flex items-center gap-2">
+      <button type="submit"
+              class="flex-1 rounded-lg bg-aegis-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-aegis-700 transition-colors">
+        Save
+      </button>
+      <button type="button"
+              hx-get="/people/review"
+              hx-target="#review-content"
+              hx-swap="innerHTML"
+              class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>

@@ -14,16 +14,20 @@
     </div>
   </div>
 
-  <!-- Tabs -->
+  <!-- Directionality Tabs -->
   <div class="border-b border-gray-200">
     <nav class="flex gap-4" aria-label="Tabs">
-      <a href="/asks?tab=all{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
+      <a href="/asks?tab=all{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}{% if source %}&source={{ source }}{% endif %}"
          class="px-1 pb-3 text-sm font-medium border-b-2 transition-colors {% if tab == 'all' %}border-aegis-500 text-aegis-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
-        All Asks
+        All
       </a>
-      <a href="/asks?tab=awaiting{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
-         class="px-1 pb-3 text-sm font-medium border-b-2 transition-colors {% if tab == 'awaiting' %}border-aegis-500 text-aegis-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
-        Awaiting Response
+      <a href="/asks?tab=inbound{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}{% if source %}&source={{ source }}{% endif %}"
+         class="px-1 pb-3 text-sm font-medium border-b-2 transition-colors {% if tab == 'inbound' %}border-aegis-500 text-aegis-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+        Inbound
+      </a>
+      <a href="/asks?tab=outbound{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}{% if source %}&source={{ source }}{% endif %}"
+         class="px-1 pb-3 text-sm font-medium border-b-2 transition-colors {% if tab == 'outbound' %}border-aegis-500 text-aegis-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+        Outbound
       </a>
     </nav>
   </div>
@@ -31,7 +35,6 @@
   <!-- Filters -->
   <form method="get" action="/asks" class="flex flex-wrap items-center gap-2">
     <input type="hidden" name="tab" value="{{ tab }}">
-    {% if tab != 'awaiting' %}
     <select name="status" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Statuses</option>
       <option value="open" {% if status == 'open' %}selected{% endif %}>Open</option>
@@ -39,7 +42,6 @@
       <option value="completed" {% if status == 'completed' %}selected{% endif %}>Completed</option>
       <option value="stale" {% if status == 'stale' %}selected{% endif %}>Stale</option>
     </select>
-    {% endif %}
     <select name="urgency" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Urgency</option>
       <option value="high" {% if urgency == 'high' %}selected{% endif %}>High</option>
@@ -56,10 +58,15 @@
       <option value="review" {% if ask_type == 'review' %}selected{% endif %}>Review</option>
       <option value="info_request" {% if ask_type == 'info_request' %}selected{% endif %}>Info Request</option>
     </select>
+    <select name="source" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      <option value="">All Sources</option>
+      <option value="email" {% if source == 'email' %}selected{% endif %}>Email</option>
+      <option value="chat" {% if source == 'chat' %}selected{% endif %}>Chat</option>
+    </select>
     <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
       Filter
     </button>
-    {% if status or urgency or ask_type %}
+    {% if status or urgency or ask_type or source %}
     <a href="/asks?tab={{ tab }}" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
     {% endif %}
   </form>
@@ -78,7 +85,6 @@
             <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Urgency</th>
             <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
             <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Source</th>
-            <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -116,45 +122,27 @@
                 {{ ask.urgency | title }}
               </span>
             </td>
-            <td class="whitespace-nowrap px-6 py-4 text-center"
-                id="ask-status-{{ ask.source_type }}-{{ ask.id }}">
-              {% set status_colors = {'open': 'bg-yellow-50 text-yellow-700', 'in_progress': 'bg-blue-50 text-blue-700', 'completed': 'bg-green-50 text-green-700', 'stale': 'bg-red-50 text-red-600'} %}
-              <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {{ status_colors.get(ask.status, 'bg-gray-100 text-gray-600') }}">
-                {{ ask.status | replace('_', ' ') | title }}
-              </span>
+            <td class="whitespace-nowrap px-6 py-4 text-center">
+              {% set current_status = ask.status or 'open' %}
+              {% set current_idx = status_options.index(current_status) if current_status in status_options else 0 %}
+              {% set next_status = status_options[(current_idx + 1) % status_options|length] %}
+              <form hx-post="/asks/{{ ask.source_type }}/{{ ask.id }}/status" hx-swap="outerHTML" hx-target="this">
+                <input type="hidden" name="new_status" value="{{ next_status }}">
+                <button type="submit"
+                        class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium cursor-pointer transition-colors hover:opacity-80 {{ status_colors.get(current_status, 'bg-gray-100 text-gray-600') }}">
+                  {{ status_labels.get(current_status, current_status) }}
+                </button>
+              </form>
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-center">
               {% if ask.source_type == 'email' %}
-              <a href="/emails/{{ ask.source_id }}" class="text-aegis-600 hover:text-aegis-800 text-xs font-medium">
+              <a href="/emails/{{ ask.source_id }}" class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">
                 Email
               </a>
               {% else %}
-              <span class="text-xs text-gray-500">Chat</span>
-              {% endif %}
-            </td>
-            <td class="whitespace-nowrap px-6 py-4 text-center">
-              {% if ask.status != 'completed' %}
-              <div x-data="{ open: false }" class="relative inline-block">
-                <button @click="open = !open" class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
-                  Update
-                </button>
-                <div x-show="open" @click.away="open = false"
-                     class="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-gray-200 bg-white shadow-lg">
-                  {% for s in ['open', 'in_progress', 'completed', 'stale'] %}
-                    {% if s != ask.status %}
-                    <form hx-post="/asks/{{ ask.source_type }}/{{ ask.id }}/status"
-                          hx-target="#ask-status-{{ ask.source_type }}-{{ ask.id }}"
-                          hx-swap="innerHTML"
-                          @htmx:afterRequest="open = false">
-                      <input type="hidden" name="new_status" value="{{ s }}">
-                      <button type="submit" class="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50">
-                        {{ s | replace('_', ' ') | title }}
-                      </button>
-                    </form>
-                    {% endif %}
-                  {% endfor %}
-                </div>
-              </div>
+              <span class="inline-flex items-center rounded-full bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700">
+                Chat
+              </span>
               {% endif %}
             </td>
           </tr>
@@ -171,11 +159,11 @@
       </p>
       <div class="flex items-center gap-2">
         {% if page > 1 %}
-        <a href="/asks?tab={{ tab }}&page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
+        <a href="/asks?tab={{ tab }}&page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}{% if source %}&source={{ source }}{% endif %}"
            class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Previous</a>
         {% endif %}
         {% if page < total_pages %}
-        <a href="/asks?tab={{ tab }}&page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}"
+        <a href="/asks?tab={{ tab }}&page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if urgency %}&urgency={{ urgency }}{% endif %}{% if ask_type %}&ask_type={{ ask_type }}{% endif %}{% if source %}&source={{ source }}{% endif %}"
            class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Next</a>
         {% endif %}
       </div>
@@ -188,7 +176,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
       <p class="mt-4 text-sm text-gray-500">
-        {% if status or urgency or ask_type %}No asks matching your filters{% else %}No asks yet{% endif %}
+        {% if status or urgency or ask_type or source %}No asks matching your filters{% else %}No asks yet{% endif %}
       </p>
       <p class="mt-1 text-xs text-gray-400">Asks will populate after email and chat extraction runs</p>
     </div>

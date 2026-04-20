@@ -22,6 +22,7 @@ from aegis.db.models import (
     EmailAsk,
     Meeting,
     Person,
+    SystemHealth,
     Workstream,
     WorkstreamItem,
 )
@@ -261,6 +262,16 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
     now_local = datetime.now(tz)
     now_utc = datetime.now(timezone.utc)
 
+    # Daily briefing (latest morning or monday)
+    briefing_stmt = (
+        select(Briefing)
+        .where(Briefing.briefing_type.in_(["morning", "monday"]))
+        .order_by(Briefing.generated_at.desc())
+        .limit(1)
+    )
+    briefing_result = await session.execute(briefing_stmt)
+    daily_briefing = briefing_result.scalar_one_or_none()
+
     # Zone 1: Workstream cards (from cache)
     ws_data = await _get_cached_or_compute(session, "workstream_cards", _compute_workstream_cards)
     workstream_cards = ws_data.get("cards", []) if isinstance(ws_data, dict) else []
@@ -300,6 +311,15 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
         persons = await get_persons_by_ids(session, person_ids)
         person_names = {pid: p.name for pid, p in persons.items()}
 
+    # Last sync: most recent last_success from system_health
+    last_sync_stmt = select(func.max(SystemHealth.last_success))
+    last_sync_result = await session.execute(last_sync_stmt)
+    last_sync_time = last_sync_result.scalar_one_or_none()
+    last_sync_minutes_ago = None
+    if last_sync_time:
+        last_sync_tz = last_sync_time.replace(tzinfo=timezone.utc) if last_sync_time.tzinfo is None else last_sync_time
+        last_sync_minutes_ago = int((now_utc - last_sync_tz).total_seconds() / 60)
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -309,6 +329,8 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
             "today_str": now_local.strftime("%A, %B %-d, %Y"),
             "current_time": now_local.strftime("%-I:%M %p %Z"),
             "tz": tz,
+            # Daily briefing
+            "daily_briefing": daily_briefing,
             # Zone 1
             "workstream_cards": workstream_cards,
             # Zone 2
@@ -324,6 +346,8 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
             "person_names": person_names,
             # Zone 5
             "next_meeting": next_meeting,
+            # Last sync
+            "last_sync_minutes_ago": last_sync_minutes_ago,
         },
     )
 

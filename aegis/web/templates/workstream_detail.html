@@ -104,7 +104,23 @@
       {% if items %}
       <div class="space-y-3">
         {% for item in items %}
-        <div class="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 transition-colors">
+        {% set item_href = '#' %}
+        {% if item.item_type == 'meeting' %}
+          {% set item_href = '/meetings/' ~ item.item_id %}
+        {% elif item.item_type == 'email' %}
+          {% set item_href = '/emails/' ~ item.item_id %}
+        {% elif item.item_type == 'action_item' %}
+          {% set item_href = '/actions?highlight=' ~ item.item_id %}
+        {% elif item.item_type == 'decision' or item.item_type == 'commitment' %}
+          {% set item_href = '/actions' %}
+        {% elif item.item_type == 'email_ask' %}
+          {% set item_href = '/asks?highlight=' ~ item.item_id ~ '&type=email' %}
+        {% elif item.item_type == 'chat_ask' %}
+          {% set item_href = '/asks?highlight=' ~ item.item_id ~ '&type=chat' %}
+        {% elif item.item_type == 'chat_message' %}
+          {% set item_href = '/asks' %}
+        {% endif %}
+        <a href="{{ item_href }}" class="block rounded-lg border border-gray-200 bg-white p-4 hover:border-aegis-300 hover:shadow-sm transition-all">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ item_type_colors.get(item.item_type, 'bg-gray-100 text-gray-600') }}">
@@ -119,7 +135,7 @@
           {% if item.linked_by == 'manual' %}
           <span class="mt-1 inline-flex text-xs text-gray-400">Manually linked</span>
           {% endif %}
-        </div>
+        </a>
         {% endfor %}
       </div>
       {% else %}

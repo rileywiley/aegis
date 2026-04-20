@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
 from aegis.db.engine import get_session
-from aegis.db.models import Meeting, MeetingAttendee
+from aegis.db.models import Briefing, Meeting, MeetingAttendee
 from aegis.db.repositories import get_meeting_attendees, get_meeting_by_id, set_meeting_excluded
 from aegis.web import templates
 
@@ -93,12 +93,26 @@ async def meeting_detail(
     tz = _local_tz()
     now_local = datetime.now(tz)
 
+    # Query for meeting prep briefing
+    prep_stmt = (
+        select(Briefing)
+        .where(
+            Briefing.briefing_type == "meeting_prep",
+            Briefing.related_meeting_id == meeting_id,
+        )
+        .order_by(Briefing.generated_at.desc())
+        .limit(1)
+    )
+    prep_result = await session.execute(prep_stmt)
+    prep_brief = prep_result.scalar_one_or_none()
+
     return templates.TemplateResponse(
         request,
         "meeting_detail.html",
         {
             "meeting": meeting,
             "attendees": attendees,
+            "prep_brief": prep_brief,
             "current_time": now_local.strftime("%-I:%M %p %Z"),
             "tz": tz,
         },

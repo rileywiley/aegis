@@ -70,6 +70,12 @@
               class="flex-1 rounded-lg bg-aegis-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-aegis-700 transition-colors">
         Approve
       </button>
+      <button hx-get="/people/{{ person.id }}/edit-form"
+              hx-target="#review-card-{{ person.id }}"
+              hx-swap="outerHTML"
+              class="flex-1 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors">
+        Edit
+      </button>
       <button hx-post="/people/{{ person.id }}/dismiss"
               hx-target="#review-card-{{ person.id }}"
               hx-swap="outerHTML"
