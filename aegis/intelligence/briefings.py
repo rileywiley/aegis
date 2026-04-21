@@ -364,9 +364,11 @@ async def generate_morning_briefing(session: AsyncSession) -> str:
     )
 
     # Store briefing
+    from datetime import datetime, timezone
     briefing = Briefing(
         briefing_type="morning",
         content=briefing_content,
+        generated_at=datetime.now(timezone.utc),
     )
     session.add(briefing)
     await session.commit()
@@ -508,6 +510,7 @@ async def generate_monday_brief(session: AsyncSession) -> str:
     briefing = Briefing(
         briefing_type="monday",
         content=briefing_content,
+        generated_at=datetime.now(timezone.utc),
     )
     session.add(briefing)
     await session.commit()
@@ -687,6 +690,7 @@ async def generate_friday_recap(session: AsyncSession) -> str:
     briefing = Briefing(
         briefing_type="friday",
         content=briefing_content,
+        generated_at=datetime.now(timezone.utc),
     )
     session.add(briefing)
     await session.commit()

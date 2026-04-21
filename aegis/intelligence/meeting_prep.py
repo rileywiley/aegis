@@ -329,6 +329,7 @@ async def generate_meeting_prep(session: AsyncSession, meeting_id: int) -> str:
         briefing_type="meeting_prep",
         related_meeting_id=meeting_id,
         content=content,
+        generated_at=datetime.now(timezone.utc),
     )
     session.add(briefing)
     await session.commit()
