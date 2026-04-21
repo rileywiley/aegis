@@ -262,10 +262,15 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
     now_local = datetime.now(tz)
     now_utc = datetime.now(timezone.utc)
 
-    # Daily briefing (latest morning or monday)
+    # Daily briefing — only show today's briefing, not stale ones from previous days
+    start_utc, end_utc = _today_range_utc()
     briefing_stmt = (
         select(Briefing)
-        .where(Briefing.briefing_type.in_(["morning", "monday"]))
+        .where(
+            Briefing.briefing_type.in_(["morning", "monday"]),
+            Briefing.generated_at >= start_utc,
+            Briefing.generated_at < end_utc,
+        )
         .order_by(Briefing.generated_at.desc())
         .limit(1)
     )
