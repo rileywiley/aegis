@@ -61,6 +61,12 @@ async def _classify_intent(question: str) -> dict:
             messages=[{"role": "user", "content": question}],
         )
         content = response.content[0].text.strip()
+        # Handle markdown-wrapped JSON
+        if "```" in content:
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
         # Track usage
         await _track_llm_usage(
             HAIKU_MODEL, "rag_classify",
@@ -221,12 +227,12 @@ async def _semantic_search(
     meeting_sql = text("""
         SELECT id, title AS label, summary AS content, start_time AS dt,
                'meeting' AS source_type,
-               1 - (embedding <=> :query_embedding::vector) AS similarity,
+               1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity,
                1.0 AS triage_weight
         FROM meetings
         WHERE embedding IS NOT NULL
           AND processing_status = 'completed'
-        ORDER BY embedding <=> :query_embedding::vector
+        ORDER BY embedding <=> CAST(:query_embedding AS vector)
         LIMIT :limit
     """)
 
@@ -234,14 +240,14 @@ async def _semantic_search(
     email_sql = text("""
         SELECT id, subject AS label, summary AS content, datetime AS dt,
                'email' AS source_type,
-               1 - (embedding <=> :query_embedding::vector) AS similarity,
+               1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity,
                CASE WHEN triage_class = 'substantive' THEN 1.0
                     WHEN triage_class = 'contextual' THEN 0.5
                     ELSE 0.2 END AS triage_weight
         FROM emails
         WHERE embedding IS NOT NULL
           AND triage_class IN ('substantive', 'contextual')
-        ORDER BY embedding <=> :query_embedding::vector
+        ORDER BY embedding <=> CAST(:query_embedding AS vector)
         LIMIT :limit
     """)
 
@@ -249,14 +255,14 @@ async def _semantic_search(
     chat_sql = text("""
         SELECT id, summary AS label, body_text AS content, datetime AS dt,
                'chat_message' AS source_type,
-               1 - (embedding <=> :query_embedding::vector) AS similarity,
+               1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity,
                CASE WHEN triage_class = 'substantive' THEN 1.0
                     WHEN triage_class = 'contextual' THEN 0.5
                     ELSE 0.2 END AS triage_weight
         FROM chat_messages
         WHERE embedding IS NOT NULL
           AND triage_class IN ('substantive', 'contextual')
-        ORDER BY embedding <=> :query_embedding::vector
+        ORDER BY embedding <=> CAST(:query_embedding AS vector)
         LIMIT :limit
     """)
 
@@ -270,6 +276,7 @@ async def _semantic_search(
                 all_results.append(dict(row))
         except Exception:
             logger.debug("Semantic search query failed", exc_info=True)
+            await session.rollback()
 
     # Compute composite score: similarity * 0.5 + recency * 0.2 + triage_weight * 0.3
     now = datetime.now(timezone.utc)

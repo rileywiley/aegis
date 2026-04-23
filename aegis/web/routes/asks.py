@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
@@ -42,13 +43,26 @@ def _local_tz() -> ZoneInfo:
 
 
 async def _get_user_person_id(session: AsyncSession) -> int | None:
-    """Look up the user's person_id from their configured email."""
+    """Look up the user's person_id from their configured email or name match."""
     user_email = settings.user_email
     if not user_email:
         return None
-    stmt = select(Person.id).where(Person.email == user_email)
+    # Try exact match first (case-insensitive)
+    stmt = select(Person.id).where(func.lower(Person.email) == user_email.lower())
     result = await session.execute(stmt)
-    return result.scalar_one_or_none()
+    pid = result.scalar_one_or_none()
+    if pid:
+        return pid
+    # Try matching by name parts from email (e.g., "delemos" → "Ricky.Delemos@...")
+    name_part = user_email.split("@")[0].replace(".", " ").lower()
+    for part in name_part.split():
+        if len(part) > 4:
+            stmt = select(Person.id).where(Person.email.ilike(f"%{part}%")).limit(1)
+            result = await session.execute(stmt)
+            pid = result.scalar_one_or_none()
+            if pid:
+                return pid
+    return None
 
 
 @router.get("")

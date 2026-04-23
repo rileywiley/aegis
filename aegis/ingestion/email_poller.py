@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # ── Noise classification constants ─────────────────────────
 
 _NOREPLY_PATTERNS = re.compile(
-    r"(^|[.\-_])no[-_.]?reply|mailer[-_.]?daemon|postmaster@|bounce@",
+    r"(^|[.\-_])no[-_.]?reply|donotreply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster@|bounce@",
     re.IGNORECASE,
 )
 
