@@ -14,10 +14,15 @@
         <li class="rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
           <p class="line-clamp-2">{{ item.description }}</p>
           <div class="mt-1 flex items-center gap-2">
-            <span class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium
-              {{ 'bg-blue-100 text-blue-700' if item.status == 'in_progress' else 'bg-gray-100 text-gray-600' }}">
-              {{ item.status }}
-            </span>
+            {% set next_map = {'open': 'in_progress', 'in_progress': 'completed', 'completed': 'stale', 'stale': 'open'} %}
+            {% set color_map = {'open': 'bg-gray-100 text-gray-600', 'in_progress': 'bg-blue-100 text-blue-700', 'completed': 'bg-green-100 text-green-700', 'stale': 'bg-red-100 text-red-700'} %}
+            <form hx-post="/actions/{{ item.id }}/status" hx-swap="outerHTML" hx-target="this">
+              <input type="hidden" name="new_status" value="{{ next_map.get(item.status, 'open') }}">
+              <button type="submit"
+                class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium cursor-pointer transition-colors hover:opacity-80 {{ color_map.get(item.status, 'bg-gray-100 text-gray-600') }}">
+                {{ item.status }}
+              </button>
+            </form>
             {% if item.deadline %}
             <span class="text-gray-400">Due: {{ item.deadline }}</span>
             {% endif %}
@@ -41,6 +46,15 @@
         <li class="rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
           <p class="line-clamp-2">{{ ask.description }}</p>
           <div class="mt-1 flex items-center gap-2">
+            {% set ask_next = {'open': 'in_progress', 'in_progress': 'completed', 'completed': 'stale', 'stale': 'open'} %}
+            {% set ask_color = {'open': 'bg-yellow-50 text-yellow-700', 'in_progress': 'bg-blue-50 text-blue-700', 'completed': 'bg-green-50 text-green-700', 'stale': 'bg-red-50 text-red-600'} %}
+            <form hx-post="/asks/email/{{ ask.id }}/status" hx-swap="outerHTML" hx-target="this">
+              <input type="hidden" name="new_status" value="{{ ask_next.get(ask.status, 'open') }}">
+              <button type="submit"
+                class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium cursor-pointer transition-colors hover:opacity-80 {{ ask_color.get(ask.status, 'bg-gray-100 text-gray-600') }}">
+                {{ ask.status | default('open') }}
+              </button>
+            </form>
             <span class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium
               {{ 'bg-red-100 text-red-700' if ask.urgency == 'high' else 'bg-amber-100 text-amber-700' if ask.urgency == 'medium' else 'bg-gray-100 text-gray-600' }}">
               {{ ask.urgency }}
@@ -68,6 +82,15 @@
         <li class="rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
           <p class="line-clamp-2">{{ ask.description }}</p>
           <div class="mt-1 flex items-center gap-2">
+            {% set ca_next = {'open': 'in_progress', 'in_progress': 'completed', 'completed': 'stale', 'stale': 'open'} %}
+            {% set ca_color = {'open': 'bg-yellow-50 text-yellow-700', 'in_progress': 'bg-blue-50 text-blue-700', 'completed': 'bg-green-50 text-green-700', 'stale': 'bg-red-50 text-red-600'} %}
+            <form hx-post="/asks/chat/{{ ask.id }}/status" hx-swap="outerHTML" hx-target="this">
+              <input type="hidden" name="new_status" value="{{ ca_next.get(ask.status, 'open') }}">
+              <button type="submit"
+                class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium cursor-pointer transition-colors hover:opacity-80 {{ ca_color.get(ask.status, 'bg-gray-100 text-gray-600') }}">
+                {{ ask.status | default('open') }}
+              </button>
+            </form>
             <span class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium
               {{ 'bg-red-100 text-red-700' if ask.urgency == 'high' else 'bg-amber-100 text-amber-700' if ask.urgency == 'medium' else 'bg-gray-100 text-gray-600' }}">
               {{ ask.urgency }}

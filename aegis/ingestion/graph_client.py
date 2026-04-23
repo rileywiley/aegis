@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import stat
 from pathlib import Path
 
@@ -30,14 +31,39 @@ GRAPH_SCOPES = [
 _TOKEN_CACHE_DIR = Path.home() / ".aegis"
 _TOKEN_CACHE_FILE = _TOKEN_CACHE_DIR / "msal_token_cache.json"
 
+# HTTP status codes that are safe to retry (transient server errors + rate limits)
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 529}
+
+# Exponential backoff base delays (seconds) for retries 0-4
+_BACKOFF_DELAYS = [1, 2, 4, 8, 16]
+_MAX_RETRIES = 5
+_MAX_JITTER = 1.0  # seconds of random jitter added to backoff
+
 
 def _ensure_cache_dir() -> None:
     """Create ~/.aegis/ with restricted permissions if it does not exist."""
     _TOKEN_CACHE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
+def _verify_token_cache_permissions() -> None:
+    """Check that the token cache file has chmod 600. Fix and warn if not."""
+    if not _TOKEN_CACHE_FILE.exists():
+        return
+    current_mode = stat.S_IMODE(os.stat(_TOKEN_CACHE_FILE).st_mode)
+    expected_mode = stat.S_IRUSR | stat.S_IWUSR  # 0o600
+    if current_mode != expected_mode:
+        logger.warning(
+            "Token cache %s has permissions %o — fixing to 600",
+            _TOKEN_CACHE_FILE,
+            current_mode,
+        )
+        os.chmod(_TOKEN_CACHE_FILE, expected_mode)
+
+
 def _load_msal_cache() -> msal.SerializableTokenCache:
     """Load the MSAL token cache from disk."""
+    _ensure_cache_dir()
+    _verify_token_cache_permissions()
     cache = msal.SerializableTokenCache()
     if _TOKEN_CACHE_FILE.exists():
         cache.deserialize(_TOKEN_CACHE_FILE.read_text())
@@ -113,25 +139,53 @@ class GraphClient:
         params: dict | None = None,
         json_body: dict | None = None,
     ) -> dict:
-        """Make a single Graph API request with auth header and 429 retry."""
+        """Make a single Graph API request with auth header and retry for transient errors.
+
+        Retries on 429, 500, 502, 503, 529 with exponential backoff + jitter.
+        For 429, respects the Retry-After header if present.
+        """
         token = self.get_access_token()
         headers = {"Authorization": f"Bearer {token}"}
 
-        for attempt in range(5):
-            response = await self._http.request(
-                method, url, headers=headers, params=params, json=json_body,
-            )
-            if response.status_code == 429:
-                retry_after = int(response.headers.get("Retry-After", "5"))
-                logger.warning(
-                    "Graph API 429 — retrying after %d seconds (attempt %d)", retry_after, attempt + 1
-                )
-                await asyncio.sleep(retry_after)
-                continue
-            response.raise_for_status()
-            return response.json()
+        last_exc: httpx.HTTPStatusError | None = None
 
-        raise RuntimeError("Graph API request failed after 5 retries due to rate limiting")
+        for attempt in range(_MAX_RETRIES):
+            try:
+                response = await self._http.request(
+                    method, url, headers=headers, params=params, json=json_body,
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status not in _RETRYABLE_STATUS_CODES:
+                    raise
+
+                last_exc = exc
+
+                # Determine wait time
+                if status == 429:
+                    retry_after_header = exc.response.headers.get("Retry-After")
+                    if retry_after_header:
+                        wait = float(retry_after_header)
+                    else:
+                        wait = _BACKOFF_DELAYS[attempt] + random.uniform(0, _MAX_JITTER)
+                else:
+                    wait = _BACKOFF_DELAYS[attempt] + random.uniform(0, _MAX_JITTER)
+
+                logger.warning(
+                    "Graph API %d on %s %s — retry %d/%d in %.1fs",
+                    status,
+                    method,
+                    url.split("?")[0],  # strip query params from log
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    wait,
+                )
+                await asyncio.sleep(wait)
+
+        # All retries exhausted — raise the last error
+        raise last_exc  # type: ignore[misc]
 
     async def _get_paginated(
         self,

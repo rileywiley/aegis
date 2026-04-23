@@ -2,6 +2,8 @@
 
 import logging
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from fastapi import FastAPI
 from sqlalchemy import text
@@ -13,6 +15,11 @@ from aegis.db.repositories import reset_stuck_processing
 logger = logging.getLogger("aegis")
 
 settings = get_settings()
+
+_LOG_DIR = Path.home() / ".aegis" / "logs"
+_LOG_FILE = _LOG_DIR / "aegis.log"
+_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_LOG_BACKUP_COUNT = 5
 
 
 async def _run_processing_cycle() -> None:
@@ -110,7 +117,51 @@ async def _run_processing_cycle() -> None:
             if substantive_emails:
                 logger.info("Extraction: processed %d substantive emails", len(substantive_emails))
 
-        # Step 2c: Generate embeddings for substantive chat messages (no LLM extraction yet)
+        # Step 2d: Extract substantive chat messages
+        from aegis.processing.chat_extractor import extract_chat, store_chat_extraction
+
+        async with async_session_factory() as session:
+            from sqlalchemy import select, update
+            from aegis.db.models import ChatMessage
+
+            stmt = select(ChatMessage).where(
+                ChatMessage.triage_class == "substantive",
+                ChatMessage.processing_status == "pending",
+            ).limit(10)  # Limit per cycle to control cost
+            result = await session.execute(stmt)
+            substantive_chats = list(result.scalars().all())
+
+            for chat_msg in substantive_chats:
+                try:
+                    await session.execute(
+                        update(ChatMessage).where(ChatMessage.id == chat_msg.id)
+                        .values(processing_status="processing")
+                    )
+                    await session.commit()
+
+                    extraction = await extract_chat(session, chat_msg.id)
+                    if extraction:
+                        await resolve_extracted_entities(session, 0, extraction)
+                        await store_chat_extraction(session, chat_msg.id, extraction)
+
+                    await session.execute(
+                        update(ChatMessage).where(ChatMessage.id == chat_msg.id)
+                        .values(processing_status="completed")
+                    )
+                    await session.commit()
+                except Exception:
+                    logger.exception("Chat extraction failed for message %d", chat_msg.id)
+                    await session.rollback()
+                    await session.execute(
+                        update(ChatMessage).where(ChatMessage.id == chat_msg.id)
+                        .values(processing_status="failed")
+                    )
+                    await session.commit()
+
+            if substantive_chats:
+                logger.info("Extraction: processed %d substantive chat messages", len(substantive_chats))
+
+        # Step 2e: Generate embeddings for contextual chat messages (no LLM extraction)
         from aegis.processing.embeddings import embed_text
 
         async with async_session_factory() as session:
@@ -118,7 +169,7 @@ async def _run_processing_cycle() -> None:
             from aegis.db.models import ChatMessage
 
             stmt = select(ChatMessage).where(
-                ChatMessage.triage_class.in_(["substantive", "contextual"]),
+                ChatMessage.triage_class == "contextual",
                 ChatMessage.embedding.is_(None),
                 ChatMessage.noise_filtered.is_(False),
             ).limit(50)
@@ -151,7 +202,46 @@ async def _run_processing_cycle() -> None:
             stats = await run_workstream_assignment(session)
             logger.info("Workstream assignment: %s", stats)
 
-        # Step 4: Update system_health for processing services
+        # Step 5: Generate nudge drafts for stale items
+        from aegis.intelligence.draft_generator import generate_stale_nudges
+
+        async with async_session_factory() as session:
+            try:
+                nudge_count = await generate_stale_nudges(session)
+                if nudge_count:
+                    logger.info("Generated %d stale item nudges", nudge_count)
+            except Exception:
+                logger.exception("Nudge generation failed")
+                await session.rollback()
+
+        # Step 6: Parse email signatures (once per day)
+        from aegis.processing.org_inference import parse_email_signatures
+
+        async with async_session_factory() as session:
+            try:
+                from sqlalchemy import select
+                from aegis.db.models import SystemHealth as SH
+                sig_stmt = select(SH).where(SH.service == "signature_parser")
+                sig_result = await session.execute(sig_stmt)
+                sig_health = sig_result.scalar_one_or_none()
+                run_sigs = True
+                if sig_health and sig_health.last_success:
+                    from datetime import timedelta
+                    last = sig_health.last_success.replace(
+                        tzinfo=timezone.utc if sig_health.last_success.tzinfo is None else sig_health.last_success.tzinfo
+                    )
+                    if (datetime.now(timezone.utc) - last) < timedelta(hours=24):
+                        run_sigs = False
+                if run_sigs:
+                    sig_stats = await parse_email_signatures(session)
+                    logger.info("Signature parsing: %s", sig_stats)
+                    from aegis.db.repositories import upsert_system_health as _ush
+                    await _ush(session, "signature_parser", status="healthy", last_success=datetime.now(timezone.utc))
+            except Exception:
+                logger.exception("Signature parsing failed")
+                await session.rollback()
+
+        # Step 7: Update system_health for processing services
         from aegis.db.repositories import upsert_system_health
         from datetime import datetime, timezone
 
@@ -169,13 +259,31 @@ async def _run_processing_cycle() -> None:
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     # ── Startup ──────────────────────────────────────────
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    log_format = "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s"
+    log_datefmt = "%Y-%m-%d %H:%M:%S"
+
+    # Console handler (existing behaviour)
     logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        level=log_level,
+        format=log_format,
+        datefmt=log_datefmt,
     )
 
+    # Rotating file handler — logs to ~/.aegis/logs/aegis.log
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        _LOG_FILE,
+        maxBytes=_LOG_MAX_BYTES,
+        backupCount=_LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
+    logging.getLogger().addHandler(file_handler)
+
     logger.info("Aegis starting on %s:%s  tz=%s", settings.aegis_host, settings.aegis_port, settings.aegis_timezone)
+    logger.info("Log file: %s", _LOG_FILE)
 
     # DB connection test
     try:
@@ -255,6 +363,8 @@ from aegis.web.routes.emails import router as emails_router  # noqa: E402
 from aegis.web.routes.asks import router as asks_router  # noqa: E402
 from aegis.web.routes.respond import router as respond_router  # noqa: E402
 from aegis.web.routes.chat import router as chat_router  # noqa: E402
+from aegis.web.routes.admin import router as admin_router  # noqa: E402
+from aegis.web.routes.search import router as search_router  # noqa: E402
 from aegis.web.routes.stubs import router as stubs_router  # noqa: E402
 
 app.include_router(dashboard_router)
@@ -269,4 +379,6 @@ app.include_router(emails_router)
 app.include_router(asks_router)
 app.include_router(respond_router)
 app.include_router(chat_router)
+app.include_router(admin_router)
+app.include_router(search_router)
 app.include_router(stubs_router)

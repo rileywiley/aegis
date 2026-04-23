@@ -3,13 +3,14 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
 from aegis.db.engine import get_session
-from aegis.db.models import Person
+from aegis.db.models import Department, Person
 from aegis.db.repositories import (
     get_department_by_id,
     get_department_members,
@@ -116,6 +117,10 @@ async def department_detail(
     sentiment = await get_department_sentiment(session, dept.id)
     tz = _local_tz()
 
+    # Get all people for assignment dropdown
+    from aegis.db.repositories import get_all_people
+    all_people = await get_all_people(session)
+
     return templates.TemplateResponse(
         request,
         "department_detail.html",
@@ -128,5 +133,93 @@ async def department_detail(
             "sentiment": sentiment,
             "current_time": _current_time(),
             "tz": tz,
+            "all_people": all_people,
         },
     )
+
+
+@router.post("/departments")
+async def create_department(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a new department."""
+    dept = Department(
+        name=name,
+        description=description or None,
+        source="manual",
+        confidence=1.0,
+    )
+    session.add(dept)
+    await session.commit()
+    return RedirectResponse(url="/departments", status_code=303)
+
+
+@router.post("/departments/{dept_id}/edit")
+async def edit_department(
+    request: Request,
+    dept_id: int,
+    name: str = Form(...),
+    description: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+):
+    """Update department name and description."""
+    dept = await get_department_by_id(session, dept_id)
+    if not dept:
+        return HTMLResponse(
+            '<div class="p-4 text-red-600">Department not found</div>',
+            status_code=404,
+        )
+    dept.name = name
+    dept.description = description or None
+    await session.commit()
+    return RedirectResponse(url=f"/departments/{dept_id}", status_code=303)
+
+
+@router.post("/departments/{dept_id}/delete")
+async def delete_department(
+    request: Request,
+    dept_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a department, setting department_id to NULL on affected people."""
+    dept = await get_department_by_id(session, dept_id)
+    if not dept:
+        return HTMLResponse(
+            '<div class="p-4 text-red-600">Department not found</div>',
+            status_code=404,
+        )
+    # Unassign people from this department
+    await session.execute(
+        update(Person).where(Person.department_id == dept_id).values(department_id=None)
+    )
+    await session.delete(dept)
+    await session.commit()
+    return RedirectResponse(url="/departments", status_code=303)
+
+
+@router.post("/departments/{dept_id}/assign")
+async def assign_person_to_department(
+    request: Request,
+    dept_id: int,
+    person_id: int = Form(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Assign a person to this department."""
+    dept = await get_department_by_id(session, dept_id)
+    if not dept:
+        return HTMLResponse(
+            '<div class="p-4 text-red-600">Department not found</div>',
+            status_code=404,
+        )
+    person = await session.get(Person, person_id)
+    if not person:
+        return HTMLResponse(
+            '<div class="p-4 text-red-600">Person not found</div>',
+            status_code=404,
+        )
+    person.department_id = dept_id
+    await session.commit()
+    return RedirectResponse(url=f"/departments/{dept_id}", status_code=303)

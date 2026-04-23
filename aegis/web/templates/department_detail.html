@@ -35,6 +35,13 @@
         {% if dept.confidence is not none %}
         <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">Confidence: {{ (dept.confidence * 100) | int }}%</span>
         {% endif %}
+        <form action="/departments/{{ dept.id }}/delete" method="post"
+              onsubmit="return confirm('Delete this department? People will be unassigned.')">
+          <button type="submit"
+                  class="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">
+            Delete
+          </button>
+        </form>
       </div>
     </div>
   </div>
@@ -84,8 +91,36 @@
 
   <!-- People Table -->
   <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-gray-100">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
       <h3 class="text-sm font-semibold text-gray-900">People ({{ members | length }})</h3>
+      {% if all_people is defined %}
+      <div x-data="{ showAssign: false }" class="relative">
+        <button @click="showAssign = !showAssign"
+                class="inline-flex items-center gap-1 rounded-md bg-aegis-50 px-2.5 py-1 text-xs font-medium text-aegis-700 hover:bg-aegis-100 transition-colors">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+          </svg>
+          Assign Person
+        </button>
+        <div x-show="showAssign" x-transition @click.away="showAssign = false"
+             class="absolute right-0 top-full mt-1 z-10 w-72 rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+          <form action="/departments/{{ dept.id }}/assign" method="post" class="space-y-2">
+            <label class="block text-xs font-medium text-gray-700">Select person</label>
+            <select name="person_id" required
+                    class="w-full rounded-md border-gray-300 text-sm focus:border-aegis-500 focus:ring-aegis-500">
+              <option value="">-- Choose --</option>
+              {% for p in all_people %}
+              <option value="{{ p.id }}">{{ p.name }}{% if p.email %} ({{ p.email }}){% endif %}</option>
+              {% endfor %}
+            </select>
+            <button type="submit"
+                    class="w-full rounded-md bg-aegis-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-aegis-700">
+              Assign
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
     </div>
     {% if members %}
     <div class="overflow-x-auto">

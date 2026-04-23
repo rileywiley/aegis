@@ -1,0 +1,58 @@
+<!-- macOS LaunchAgent for Aegis auto-start on login.
+
+Install:
+    cp scripts/com.aegis.plist ~/Library/LaunchAgents/com.aegis.server.plist
+    # Edit the plist to set correct paths for ProgramArguments
+
+Load (enable auto-start):
+    launchctl load ~/Library/LaunchAgents/com.aegis.server.plist
+
+Unload (disable auto-start):
+    launchctl unload ~/Library/LaunchAgents/com.aegis.server.plist
+
+Check status:
+    launchctl list | grep aegis
+
+IMPORTANT: Before loading, edit the ProgramArguments below to match
+your Python interpreter and project paths. You can find them with:
+    which python3
+    pwd  (from project root)
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aegis.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Replace with your Python path: which python3 -->
+        <string>/usr/local/bin/python3</string>
+        <!-- Replace with full path to aegis_ctl.py -->
+        <string>/Users/rickydelemos/PycharmProjects/aegis/scripts/aegis_ctl.py</string>
+        <string>start</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rickydelemos/PycharmProjects/aegis</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/rickydelemos/.aegis/logs/launchagent.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/rickydelemos/.aegis/logs/launchagent.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>

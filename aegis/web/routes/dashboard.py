@@ -88,7 +88,9 @@ async def _get_cached_or_compute(
 
 
 async def _compute_workstream_cards(session: AsyncSession) -> dict:
-    """Zone 1: Active workstreams, pinned first."""
+    """Zone 1: Active workstreams, pinned first, with sentiment."""
+    from aegis.db.models import SentimentAggregation
+
     max_slots = settings.dashboard_max_workstream_slots
     stmt = (
         select(Workstream)
@@ -114,7 +116,20 @@ async def _compute_workstream_cards(session: AsyncSession) -> dict:
         )
         last_activity = (await session.execute(last_stmt)).scalar_one()
 
-        cards.append({
+        # Sentiment for this workstream
+        sentiment_stmt = (
+            select(SentimentAggregation)
+            .where(
+                SentimentAggregation.scope_type == "workstream",
+                SentimentAggregation.scope_id == str(ws.id),
+            )
+            .order_by(SentimentAggregation.period_end.desc())
+            .limit(1)
+        )
+        sentiment_result = await session.execute(sentiment_stmt)
+        sentiment_row = sentiment_result.scalar_one_or_none()
+
+        card = {
             "id": ws.id,
             "name": ws.name,
             "status": ws.status,
@@ -122,7 +137,10 @@ async def _compute_workstream_cards(session: AsyncSession) -> dict:
             "item_count": item_count,
             "last_activity": last_activity.isoformat() if last_activity else None,
             "description": (ws.description or "")[:100],
-        })
+            "sentiment_score": sentiment_row.avg_score if sentiment_row else None,
+            "sentiment_trend": sentiment_row.trend if sentiment_row else None,
+        }
+        cards.append(card)
 
     return {"cards": cards}
 

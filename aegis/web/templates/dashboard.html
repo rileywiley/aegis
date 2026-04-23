@@ -89,7 +89,24 @@
           <p class="mt-1 text-xs text-gray-500 line-clamp-2">{{ ws.description }}</p>
           {% endif %}
           <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
-            <span>{{ ws.item_count }} item{{ 's' if ws.item_count != 1 else '' }}</span>
+            <div class="flex items-center gap-2">
+              <span>{{ ws.item_count }} item{{ 's' if ws.item_count != 1 else '' }}</span>
+              {% if ws.sentiment_score is defined and ws.sentiment_score is not none %}
+              <span class="flex items-center gap-0.5" title="Sentiment: {{ ws.sentiment_score | default(0) | round(0) | int }}">
+                <span class="inline-block h-2 w-2 rounded-full
+                  {% if ws.sentiment_score >= 70 %}bg-green-500
+                  {% elif ws.sentiment_score >= 50 %}bg-amber-400
+                  {% else %}bg-red-500{% endif %}"></span>
+                {% if ws.sentiment_trend == 'up' %}
+                <span class="text-green-500 text-[10px] font-bold">&#9650;</span>
+                {% elif ws.sentiment_trend == 'down' %}
+                <span class="text-red-500 text-[10px] font-bold">&#9660;</span>
+                {% else %}
+                <span class="text-gray-400 text-[10px] font-bold">&mdash;</span>
+                {% endif %}
+              </span>
+              {% endif %}
+            </div>
             <span class="inline-flex items-center rounded-full px-1.5 py-0.5
               {% if ws.status == 'active' %}bg-green-50 text-green-600
               {% else %}bg-gray-100 text-gray-500{% endif %}">
@@ -198,7 +215,7 @@
                       {% if d.source_meeting_id %} — <a href="/meetings/{{ d.source_meeting_id }}" class="text-aegis-600 hover:underline">Meeting</a>{% endif %}
                     </p>
                   </div>
-                  <a href="/respond?type=decision&id={{ d.id }}"
+                  <a href="/respond?source_type=decision&source_id={{ d.id }}"
                      class="shrink-0 rounded-md bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700 hover:bg-aegis-100 transition-colors">
                     Respond
                   </a>
@@ -230,7 +247,7 @@
                       {% else %}bg-gray-100 text-gray-500{% endif %}">
                       {{ a.urgency }}
                     </span>
-                    <a href="/respond?type={{ a.source }}_ask&id={{ a.id }}"
+                    <a href="/respond?source_type={{ a.source }}_ask&source_id={{ a.id }}"
                        class="rounded-md bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700 hover:bg-aegis-100 transition-colors">
                       Respond
                     </a>

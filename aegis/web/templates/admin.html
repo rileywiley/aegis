@@ -1,23 +1,146 @@
 {% extends "base.html" %}
 
-{% block title %}Aegis — Admin{% endblock %}
-{% block page_title %}Admin{% endblock %}
+{% block title %}Aegis — Admin Settings{% endblock %}
+{% block page_title %}Admin Settings{% endblock %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center py-24">
-  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
-    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
-      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <!-- Settings sections -->
+  {% for section in sections %}
+  <div x-data="{ open: {{ 'true' if loop.index <= 3 else 'false' }} }"
+       class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+    <!-- Section header -->
+    <button @click="open = !open"
+            class="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-900">{{ section.title }}</h3>
+        <p class="text-xs text-gray-500 mt-0.5">{{ section.description }}</p>
+      </div>
+      <svg :class="open ? 'rotate-180' : ''" class="h-5 w-5 text-gray-400 transition-transform duration-200"
+           fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
       </svg>
-    </div>
-    <h2 class="mt-6 text-lg font-semibold text-gray-900">Admin</h2>
-    <p class="mt-2 text-sm text-gray-500">Configure polling intervals, thresholds, schedules, and notification preferences.</p>
-    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
-      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
-      <span class="text-xs font-medium text-aegis-700">Coming in Phase 5</span>
+    </button>
+
+    <!-- Section body -->
+    <div x-show="open" x-cloak x-collapse class="border-t border-gray-100">
+      <div class="divide-y divide-gray-50">
+        {% for field in section.fields %}
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+          <div class="sm:w-1/3 min-w-0">
+            <label for="setting-{{ field.key }}" class="text-sm font-medium text-gray-700">{{ field.label }}</label>
+            <p class="text-xs text-gray-400 mt-0.5">{{ field.description }}</p>
+          </div>
+
+          <div class="sm:flex-1 flex items-center gap-3">
+            {% if field.input_type == 'readonly' %}
+              <!-- Read-only display -->
+              <input type="text" value="{{ field.value }}" disabled
+                     class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed">
+
+            {% elif field.input_type == 'bool' %}
+              <!-- Toggle switch -->
+              <div x-data="{ on: {{ 'true' if field.value else 'false' }} }" class="flex items-center gap-3">
+                <button type="button"
+                        @click="on = !on; $refs.indicator_{{ field.key }}.innerHTML = ''; htmx.ajax('POST', '/admin/settings', {target: $refs.indicator_{{ field.key }}, values: {key: '{{ field.key }}', value: on.toString()}})"
+                        :class="on ? 'bg-aegis-600' : 'bg-gray-200'"
+                        class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out">
+                  <span :class="on ? 'translate-x-5' : 'translate-x-0'"
+                        class="pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5 ml-0.5"></span>
+                </button>
+                <span class="text-sm text-gray-600" x-text="on ? 'Enabled' : 'Disabled'"></span>
+                <span x-ref="indicator_{{ field.key }}" class="text-xs text-green-600"></span>
+              </div>
+
+            {% elif field.input_type == 'textarea' %}
+              <!-- Textarea -->
+              <div class="w-full">
+                <textarea id="setting-{{ field.key }}" name="value" rows="2"
+                          hx-post="/admin/settings"
+                          hx-trigger="change"
+                          hx-vals='{"key": "{{ field.key }}"}'
+                          hx-target="#indicator-{{ field.key }}"
+                          hx-swap="innerHTML"
+                          hx-include="this"
+                          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-aegis-500 focus:ring-1 focus:ring-aegis-500">{{ field.value }}</textarea>
+                <span id="indicator-{{ field.key }}" class="text-xs text-green-600"></span>
+              </div>
+
+            {% elif field.input_type == 'time' %}
+              <!-- Time input -->
+              <div class="flex items-center gap-3">
+                <input type="time" id="setting-{{ field.key }}" name="value"
+                       value="{{ field.value }}"
+                       hx-post="/admin/settings"
+                       hx-trigger="change"
+                       hx-vals='{"key": "{{ field.key }}"}'
+                       hx-target="#indicator-{{ field.key }}"
+                       hx-swap="innerHTML"
+                       hx-include="this"
+                       class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-aegis-500 focus:ring-1 focus:ring-aegis-500">
+                <span id="indicator-{{ field.key }}" class="text-xs text-green-600"></span>
+              </div>
+
+            {% else %}
+              <!-- Number / text input -->
+              <div class="flex items-center gap-3 w-full">
+                <input type="{{ 'number' if field.input_type == 'number' else 'text' }}"
+                       id="setting-{{ field.key }}" name="value"
+                       value="{{ field.value }}"
+                       {% if field.input_type == 'number' %}step="any"{% endif %}
+                       hx-post="/admin/settings"
+                       hx-trigger="change"
+                       hx-vals='{"key": "{{ field.key }}"}'
+                       hx-target="#indicator-{{ field.key }}"
+                       hx-swap="innerHTML"
+                       hx-include="this"
+                       class="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-aegis-500 focus:ring-1 focus:ring-aegis-500">
+                <span id="indicator-{{ field.key }}" class="text-xs text-green-600"></span>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
   </div>
+  {% endfor %}
+
+  <!-- Voice Profile section -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
+       x-data="{ open: true }">
+    <button @click="open = !open"
+            class="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-900">Communication / Voice</h3>
+        <p class="text-xs text-gray-500 mt-0.5">Your auto-learned voice profile and custom writing rules.</p>
+      </div>
+      <svg :class="open ? 'rotate-180' : ''" class="h-5 w-5 text-gray-400 transition-transform duration-200"
+           fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+      </svg>
+    </button>
+
+    <div x-show="open" x-cloak x-collapse class="border-t border-gray-100"
+         id="voice-profile-section">
+      {% include "components/voice_profile_card.html" %}
+    </div>
+  </div>
+
+  <!-- Note about changes -->
+  <div class="rounded-lg bg-blue-50 border border-blue-200 p-4">
+    <div class="flex items-start gap-3">
+      <svg class="h-5 w-5 text-blue-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+      </svg>
+      <div>
+        <p class="text-sm text-blue-800 font-medium">Settings are saved immediately.</p>
+        <p class="text-xs text-blue-600 mt-1">Most changes take effect right away. Polling interval changes will apply on the next cycle.</p>
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}

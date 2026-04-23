@@ -96,9 +96,12 @@ async def _get_source_context(
 @router.get("")
 async def respond_page(
     request: Request,
+    source_type: str | None = None,
+    source_id: int | None = None,
+    draft_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """Response workflow page — list pending drafts."""
+    """Response workflow page — list pending drafts, optionally pre-fill from source."""
     # Fetch pending drafts
     stmt = (
         select(Draft)
@@ -139,6 +142,34 @@ async def respond_page(
     sent_count_stmt = select(func.count()).select_from(Draft).where(Draft.status == "sent")
     sent_count = (await session.execute(sent_count_stmt)).scalar() or 0
 
+    # Pre-fill source context if query params provided
+    source_context = None
+    prefill_source_type = source_type
+    prefill_source_id = source_id
+    prefill_channel = "email"
+    if source_type and source_id:
+        try:
+            context_text, subject_hint, recipient_id = await _get_source_context(
+                session, source_type, source_id
+            )
+            recipient_name = None
+            if recipient_id:
+                person = await session.get(Person, recipient_id)
+                if person:
+                    recipient_name = person.name
+            source_context = {
+                "source_type": source_type,
+                "source_id": source_id,
+                "context": context_text,
+                "subject_hint": subject_hint,
+                "recipient_name": recipient_name,
+            }
+            # Infer channel from source type
+            if source_type == "chat_ask":
+                prefill_channel = "teams_chat"
+        except Exception:
+            logger.debug("Could not load source context for %s/%s", source_type, source_id)
+
     return templates.TemplateResponse(
         request,
         "respond.html",
@@ -147,6 +178,10 @@ async def respond_page(
             "page_title": "Respond",
             "drafts": draft_data,
             "sent_count": sent_count,
+            "source_context": source_context,
+            "prefill_source_type": prefill_source_type,
+            "prefill_source_id": prefill_source_id,
+            "prefill_channel": prefill_channel,
         },
     )
 

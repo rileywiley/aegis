@@ -4,19 +4,64 @@
 {% block page_title %}Search{% endblock %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center py-24">
-  <div class="rounded-2xl bg-white border border-gray-200 shadow-sm p-12 text-center max-w-md">
-    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-aegis-50">
-      <svg class="h-8 w-8 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <!-- Search bar -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+    <form hx-get="/search/results"
+          hx-target="#search-results"
+          hx-swap="innerHTML"
+          hx-indicator="#search-spinner"
+          class="flex flex-col sm:flex-row gap-3">
+
+      <div class="flex-1 relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+        <input type="text" name="q" placeholder="Search meetings, emails, and chats..."
+               value="{{ query }}"
+               class="w-full rounded-lg border border-gray-300 pl-10 pr-4 py-2.5 text-sm focus:border-aegis-500 focus:ring-1 focus:ring-aegis-500"
+               autofocus>
+      </div>
+
+      <select name="source"
+              class="rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-aegis-500 focus:ring-1 focus:ring-aegis-500 bg-white">
+        <option value="all" {{ 'selected' if source_filter == 'all' else '' }}>All Sources</option>
+        <option value="meetings" {{ 'selected' if source_filter == 'meetings' else '' }}>Meetings</option>
+        <option value="emails" {{ 'selected' if source_filter == 'emails' else '' }}>Emails</option>
+        <option value="chats" {{ 'selected' if source_filter == 'chats' else '' }}>Chats</option>
+      </select>
+
+      <button type="submit"
+              class="rounded-lg bg-aegis-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
+        Search
+      </button>
+    </form>
+
+    <!-- Search spinner -->
+    <div id="search-spinner" class="htmx-indicator flex items-center justify-center py-4">
+      <svg class="animate-spin h-5 w-5 text-aegis-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
       </svg>
-    </div>
-    <h2 class="mt-6 text-lg font-semibold text-gray-900">Search</h2>
-    <p class="mt-2 text-sm text-gray-500">Semantic and keyword hybrid search across all ingested content.</p>
-    <div class="mt-6 inline-flex items-center gap-2 rounded-full bg-aegis-50 px-4 py-2">
-      <div class="h-2 w-2 rounded-full bg-aegis-400 animate-pulse"></div>
-      <span class="text-xs font-medium text-aegis-700">Coming in Phase 5</span>
+      <span class="ml-2 text-sm text-gray-500">Searching...</span>
     </div>
   </div>
+
+  <!-- Results area -->
+  <div id="search-results">
+    {% if results %}
+      {% include "components/search_results.html" %}
+    {% else %}
+      <div class="text-center py-12">
+        <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+        <p class="mt-3 text-sm text-gray-500">Enter a search query to find meetings, emails, and chat messages.</p>
+        <p class="mt-1 text-xs text-gray-400">Uses both keyword matching and semantic similarity.</p>
+      </div>
+    {% endif %}
+  </div>
+
 </div>
 {% endblock %}

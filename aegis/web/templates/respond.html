@@ -25,7 +25,7 @@
   </div>
 
   <!-- Generate new draft -->
-  <div x-data="{ open: false }" class="rounded-xl bg-white border border-gray-200 shadow-sm">
+  <div x-data="{ open: {{ 'true' if source_context else 'false' }} }" class="rounded-xl bg-white border border-gray-200 shadow-sm">
     <button @click="open = !open"
             class="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors rounded-xl">
       <div class="flex items-center gap-3">
@@ -42,28 +42,39 @@
     </button>
 
     <div x-show="open" x-transition class="border-t border-gray-100 p-4">
+      {% if source_context %}
+      <div class="mb-4 rounded-lg bg-blue-50 border border-blue-100 p-3">
+        <p class="text-xs font-medium text-blue-700 uppercase tracking-wider mb-1">Source Context</p>
+        {% if source_context.recipient_name %}
+        <p class="text-sm text-blue-900">To: {{ source_context.recipient_name }}</p>
+        {% endif %}
+        <p class="text-xs text-blue-700 mt-1 whitespace-pre-wrap line-clamp-4">{{ source_context.context }}</p>
+      </div>
+      {% endif %}
       <form hx-post="/respond/generate" hx-target="#drafts-container" hx-swap="innerHTML" class="space-y-4">
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Source Type</label>
             <select name="source_type" required
                     class="w-full rounded-lg border-gray-300 shadow-sm text-sm focus:border-aegis-500 focus:ring-aegis-500">
-              <option value="email_ask">Email Ask</option>
-              <option value="chat_ask">Chat Ask</option>
-              <option value="action_item">Action Item</option>
+              <option value="email_ask" {{ 'selected' if prefill_source_type == 'email_ask' else '' }}>Email Ask</option>
+              <option value="chat_ask" {{ 'selected' if prefill_source_type == 'chat_ask' else '' }}>Chat Ask</option>
+              <option value="action_item" {{ 'selected' if prefill_source_type == 'action_item' else '' }}>Action Item</option>
+              <option value="decision" {{ 'selected' if prefill_source_type == 'decision' else '' }}>Decision</option>
             </select>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Source ID</label>
             <input type="number" name="source_id" required min="1" placeholder="Item ID"
+                   value="{{ prefill_source_id or '' }}"
                    class="w-full rounded-lg border-gray-300 shadow-sm text-sm focus:border-aegis-500 focus:ring-aegis-500">
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Channel</label>
             <select name="channel"
                     class="w-full rounded-lg border-gray-300 shadow-sm text-sm focus:border-aegis-500 focus:ring-aegis-500">
-              <option value="email">Email</option>
-              <option value="teams_chat">Teams Chat</option>
+              <option value="email" {{ 'selected' if prefill_channel == 'email' else '' }}>Email</option>
+              <option value="teams_chat" {{ 'selected' if prefill_channel == 'teams_chat' else '' }}>Teams Chat</option>
             </select>
           </div>
         </div>
