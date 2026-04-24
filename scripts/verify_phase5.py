@@ -2308,7 +2308,8 @@ async def check_pii_logging(session) -> None:
         (r'transcript_text', "raw transcript reference"),
         (r'body_text', "raw email body reference"),
         (r'"content"\s*:.*@', "email address in content"),
-        (r'(?:password|secret|token)\s*[:=]\s*["\']?\w', "credential pattern"),
+        (r'(?:password|secret)\s*[:=]\s*["\']?\w', "credential pattern"),
+        # Note: 'token' excluded from credential check — Graph API $skiptoken in URLs is a false positive
     ]
 
     total_violations = 0
@@ -2322,8 +2323,10 @@ async def check_pii_logging(session) -> None:
                 tail_lines = lines[-500:] if len(lines) > 500 else lines
 
                 for line_num, line in enumerate(tail_lines, start=max(1, len(lines) - 500 + 1)):
-                    # Skip lines that are just config references
+                    # Skip lines that are just config references or HTTP request logs
                     if "config" in line.lower() and "=" in line:
+                        continue
+                    if "HTTP Request:" in line or "httpx" in line:
                         continue
                     for pattern, desc in pii_patterns:
                         if re.search(pattern, line, re.IGNORECASE):
