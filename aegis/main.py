@@ -21,6 +21,9 @@ _LOG_FILE = _LOG_DIR / "aegis.log"
 _LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 _LOG_BACKUP_COUNT = 5
 
+# Ensure log directory exists at module load time (not just in lifespan)
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 
 async def _run_processing_cycle() -> None:
     """30-minute processing cycle: triage → extraction → workstream assignment.
@@ -300,6 +303,16 @@ async def lifespan(app: FastAPI):
         if reset_count:
             logger.info("Reset %d stuck processing items back to pending", reset_count)
 
+    # Bootstrap admin settings (pre-populate from .env on first run)
+    from aegis.db.admin_config import bootstrap_admin_settings, load_admin_overrides
+    async with async_session_factory() as session:
+        bootstrapped = await bootstrap_admin_settings(session)
+        if bootstrapped:
+            logger.info("Bootstrapped %d admin settings from config defaults", bootstrapped)
+        overrides = await load_admin_overrides(session)
+        if overrides:
+            logger.info("Loaded %d admin setting overrides", overrides)
+
     # ── Start background services ────────────────────────
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from aegis.ingestion.poller import start_polling, stop_polling
@@ -330,6 +343,23 @@ async def lifespan(app: FastAPI):
     # Intelligence jobs (briefings, meeting prep notifications)
     from aegis.intelligence.scheduler import register_intelligence_jobs
     register_intelligence_jobs(scheduler)
+
+    # Daily database backup (2 AM)
+    async def _run_backup():
+        import subprocess
+        try:
+            subprocess.run(
+                ["python", "scripts/backup.py", "--rotate"],
+                capture_output=True, timeout=120,
+            )
+            logger.info("Daily backup completed")
+        except Exception:
+            logger.exception("Daily backup failed")
+
+    scheduler.add_job(
+        _run_backup, "cron", hour=2, minute=0,
+        id="daily_backup", replace_existing=True,
+    )
 
     scheduler.start()
     app.state.scheduler = scheduler
