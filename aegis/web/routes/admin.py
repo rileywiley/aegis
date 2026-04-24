@@ -158,9 +158,22 @@ def _resolve_value(key: str, default: object, overrides: dict[str, object]) -> o
     """Return the admin_settings override if present, else the config default."""
     if key in overrides:
         val = overrides[key]
-        # JSONB stores as {"v": actual_value} to handle all types
-        if isinstance(val, dict) and "v" in val:
-            return val["v"]
+        # Handle JSONB dict formats: {"v": actual} or {"value": actual}
+        if isinstance(val, dict):
+            if "v" in val:
+                return val["v"]
+            if "value" in val:
+                return val["value"]
+        # Handle double-encoded JSON strings from earlier bootstrap
+        if isinstance(val, str):
+            try:
+                import json
+                parsed = json.loads(val)
+                if isinstance(parsed, dict):
+                    return parsed.get("v", parsed.get("value", val))
+                return parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
         return val
     return default
 

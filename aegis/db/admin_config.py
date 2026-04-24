@@ -125,7 +125,7 @@ async def bootstrap_admin_settings(session: AsyncSession) -> int:
     for key, (value, description) in setting_defs.items():
         stmt = pg_insert(AdminSetting).values(
             key=key,
-            value=json.dumps({"value": value}),
+            value={"v": value},  # JSONB dict — NOT json.dumps (avoids double-encoding)
             description=description,
             updated=datetime.now(timezone.utc),
         )
