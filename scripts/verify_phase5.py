@@ -2284,7 +2284,8 @@ async def check_pii_logging(session) -> None:
     section_header(32, "PII-SAFE LOGGING")
 
     # Find log files
-    log_dirs = ["logs", "."]
+    aegis_log_path = os.path.expanduser("~/.aegis/logs")
+    log_dirs = ["logs", ".", aegis_log_path]
     log_files = []
     for d in log_dirs:
         log_files.extend(glob_mod.glob(os.path.join(d, "*.log")))
@@ -2772,7 +2773,9 @@ async def check_startup_script(session) -> None:
 async def check_logging(session) -> None:
     section_header(39, "LOGGING")
 
-    log_dir = "logs"
+    # Check both project-relative and ~/.aegis/logs/ paths
+    aegis_log_dir = os.path.expanduser("~/.aegis/logs")
+    log_dir = aegis_log_dir if os.path.isdir(aegis_log_dir) else "logs"
     log_dir_exists = os.path.isdir(log_dir)
 
     if not log_dir_exists:
