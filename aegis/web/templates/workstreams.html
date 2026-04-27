@@ -95,7 +95,7 @@
   {% if workstreams %}
   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
     {% for ws in workstreams %}
-    <a href="/workstreams/{{ ws.id }}" class="block group">
+    <a href="/workstreams/{{ ws.id }}?from=/workstreams" class="block group">
       <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-5 hover:shadow-md hover:border-aegis-200 transition-all">
         <div class="flex items-start justify-between mb-3">
           <div class="flex-1 min-w-0">

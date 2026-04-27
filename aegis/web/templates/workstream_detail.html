@@ -7,12 +7,7 @@
 <div class="space-y-6">
 
   <!-- Back link -->
-  <a href="/workstreams" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors">
-    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-    </svg>
-    Back to Workstreams
-  </a>
+  {% include "components/breadcrumb.html" %}
 
   <!-- Header -->
   <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
@@ -104,11 +99,12 @@
       {% if items %}
       <div class="space-y-3">
         {% for item in items %}
+        {% set ws_from = '/workstreams/' ~ ws.id %}
         {% set item_href = '#' %}
         {% if item.item_type == 'meeting' %}
-          {% set item_href = '/meetings/' ~ item.item_id %}
+          {% set item_href = '/meetings/' ~ item.item_id ~ '?from=' ~ ws_from %}
         {% elif item.item_type == 'email' %}
-          {% set item_href = '/emails/' ~ item.item_id %}
+          {% set item_href = '/emails/' ~ item.item_id ~ '?from=' ~ ws_from %}
         {% elif item.item_type == 'action_item' %}
           {% set item_href = '/actions?highlight=' ~ item.item_id %}
         {% elif item.item_type == 'decision' or item.item_type == 'commitment' %}

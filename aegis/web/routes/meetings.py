@@ -13,6 +13,7 @@ from aegis.db.engine import get_session
 from aegis.db.models import Briefing, Meeting, MeetingAttendee
 from aegis.db.repositories import get_meeting_attendees, get_meeting_by_id, set_meeting_excluded
 from aegis.web import templates
+from aegis.web.breadcrumb import resolve_breadcrumb
 
 router = APIRouter(prefix="/meetings")
 settings = get_settings()
@@ -83,6 +84,7 @@ async def meetings_list(
 async def meeting_detail(
     request: Request,
     meeting_id: int,
+    from_url: str | None = Query(None, alias="from"),
     session: AsyncSession = Depends(get_session),
 ):
     meeting = await get_meeting_by_id(session, meeting_id)
@@ -92,6 +94,8 @@ async def meeting_detail(
     attendees = await get_meeting_attendees(session, meeting_id)
     tz = _local_tz()
     now_local = datetime.now(tz)
+
+    back_url, back_label = resolve_breadcrumb(request, from_url, "/meetings", "Meetings")
 
     # Query for meeting prep briefing
     prep_stmt = (
@@ -113,6 +117,8 @@ async def meeting_detail(
             "meeting": meeting,
             "attendees": attendees,
             "prep_brief": prep_brief,
+            "back_url": back_url,
+            "back_label": back_label,
             "current_time": now_local.strftime("%-I:%M %p %Z"),
             "tz": tz,
         },

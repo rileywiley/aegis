@@ -47,7 +47,7 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for meeting in meetings %}
-          <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="window.location='/meetings/{{ meeting.id }}'">
+          <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="window.location='/meetings/{{ meeting.id }}?from=/meetings'">
             <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
               {{ meeting.start_time.astimezone(tz).strftime('%b %-d, %Y') }}
             </td>

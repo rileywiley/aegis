@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ from aegis.db.repositories import (
 )
 from aegis.intelligence.sentiment import get_department_sentiment
 from aegis.web import templates
+from aegis.web.breadcrumb import resolve_breadcrumb
 
 router = APIRouter()
 settings = get_settings()
@@ -93,9 +94,11 @@ async def departments_list(
 async def department_detail(
     request: Request,
     dept_id: int,
+    from_url: str | None = Query(None, alias="from"),
     session: AsyncSession = Depends(get_session),
 ):
     """Department detail page with members, open items, and workstreams."""
+    back_url, back_label = resolve_breadcrumb(request, from_url, "/departments", "Departments")
     dept = await get_department_by_id(session, dept_id)
     if not dept:
         return HTMLResponse(
@@ -130,6 +133,8 @@ async def department_detail(
             "open_items": open_items,
             "workstreams": workstreams,
             "head_name": head_name,
+            "back_url": back_url,
+            "back_label": back_label,
             "sentiment": sentiment,
             "current_time": _current_time(),
             "tz": tz,

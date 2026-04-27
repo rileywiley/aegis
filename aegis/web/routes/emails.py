@@ -15,6 +15,7 @@ from aegis.db.repositories import (
     get_persons_by_ids,
 )
 from aegis.web import templates
+from aegis.web.breadcrumb import resolve_breadcrumb
 
 router = APIRouter(prefix="/emails")
 settings = get_settings()
@@ -77,6 +78,7 @@ async def emails_list(
 async def email_detail(
     request: Request,
     email_id: int,
+    from_url: str | None = Query(None, alias="from"),
     session: AsyncSession = Depends(get_session),
 ):
     email = await get_email_by_id(session, email_id)
@@ -86,6 +88,7 @@ async def email_detail(
     asks = await get_email_asks_for_email(session, email_id)
     tz = _local_tz()
     now_local = datetime.now(tz)
+    back_url, back_label = resolve_breadcrumb(request, from_url, "/emails", "Emails")
 
     # Get sender name
     sender_name = None
@@ -112,6 +115,8 @@ async def email_detail(
             "asks": asks,
             "sender_name": sender_name,
             "person_map": person_map,
+            "back_url": back_url,
+            "back_label": back_label,
             "current_time": now_local.strftime("%-I:%M %p %Z"),
             "tz": tz,
         },

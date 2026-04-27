@@ -8,12 +8,7 @@
 
   <!-- Back link + Header -->
   <div>
-    <a href="/departments" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-aegis-600 transition-colors mb-3">
-      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-      </svg>
-      All Departments
-    </a>
+    {% include "components/breadcrumb.html" %}
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
         <h2 class="text-2xl font-bold text-gray-900">{{ dept.name }}</h2>
@@ -184,7 +179,7 @@
     </div>
     <div class="divide-y divide-gray-100">
       {% for ws in workstreams %}
-      <a href="/workstreams/{{ ws.id }}" class="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors">
+      <a href="/workstreams/{{ ws.id }}?from=/departments/{{ dept.id }}" class="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-gray-900 truncate">{{ ws.name }}</p>
           {% if ws.description %}

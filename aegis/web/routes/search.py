@@ -104,7 +104,7 @@ async def _keyword_search_meetings(
             "title": m.title or "Untitled Meeting",
             "preview": preview[:200],
             "date": m.start_time.isoformat() if m.start_time else None,
-            "url": f"/meetings/{m.id}",
+            "url": f"/meetings/{m.id}?from=/search",
             "score": 0.6,  # keyword match base score
             "method": "keyword",
         })
@@ -137,7 +137,7 @@ async def _keyword_search_emails(
             "title": e.subject or "No Subject",
             "preview": preview[:200],
             "date": e.datetime_.isoformat() if e.datetime_ else None,
-            "url": f"/emails/{e.id}",
+            "url": f"/emails/{e.id}?from=/search",
             "score": 0.6,
             "method": "keyword",
         })
@@ -258,7 +258,7 @@ def _row_to_result(row: dict, url_prefix: str | None) -> dict:
 
     score = similarity * 0.7 + recency * 0.3
 
-    url = f"{url_prefix}{item_id}" if url_prefix and item_id else None
+    url = f"{url_prefix}{item_id}?from=/search" if url_prefix and item_id else None
 
     return {
         "id": item_id,

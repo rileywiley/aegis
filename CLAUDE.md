@@ -1,6 +1,13 @@
 # AEGIS — AI Chief of Staff
 ## Complete Project Specification for Claude Code (macOS)
 
+> **Note:** This document describes Aegis. A companion document `HELIOS.md`
+> describes the Helios capture subsystem, which replaces the Screenpipe
+> integration described in §2 and §6 of this document. Where this spec
+> references Screenpipe, consult HELIOS.md for the actual implementation.
+> See HELIOS.md §16 for the specific Aegis changes required.
+
+
 > **This file should be saved as `CLAUDE.md` in the project root.**
 > Claude Code reads it automatically on startup. Do not modify during build.
 >

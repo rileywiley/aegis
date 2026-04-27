@@ -21,6 +21,7 @@ from aegis.db.repositories import (
     update_workstream,
 )
 from aegis.web import templates
+from aegis.web.breadcrumb import resolve_breadcrumb
 
 router = APIRouter(prefix="/workstreams")
 settings = get_settings()
@@ -101,6 +102,7 @@ async def workstreams_list(
 async def workstream_detail(
     request: Request,
     workstream_id: int,
+    from_url: str | None = Query(None, alias="from"),
     session: AsyncSession = Depends(get_session),
 ):
     ws = await get_workstream_by_id(session, workstream_id)
@@ -110,6 +112,8 @@ async def workstream_detail(
     items = await get_workstream_items(session, workstream_id)
     stakeholders = await get_workstream_stakeholders(session, workstream_id)
     milestones = await get_workstream_milestones(session, workstream_id)
+
+    back_url, back_label = resolve_breadcrumb(request, from_url, "/workstreams", "Workstreams")
 
     # Resolve owner name
     owner_name = None
@@ -128,6 +132,8 @@ async def workstream_detail(
             "stakeholders": stakeholders,
             "milestones": milestones,
             "owner_name": owner_name,
+            "back_url": back_url,
+            "back_label": back_label,
             "status_options": _STATUS_OPTIONS,
             "item_type_labels": _ITEM_TYPE_LABELS,
             "item_type_colors": _ITEM_TYPE_COLORS,

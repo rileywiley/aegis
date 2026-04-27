@@ -136,7 +136,7 @@
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-center">
               {% if ask.source_type == 'email' %}
-              <a href="/emails/{{ ask.source_id }}" class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">
+              <a href="/emails/{{ ask.source_id }}?from=/asks" class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">
                 Email
               </a>
               {% else %}

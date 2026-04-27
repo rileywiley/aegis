@@ -62,7 +62,7 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for email in emails %}
-          <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="window.location='/emails/{{ email.id }}'">
+          <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="window.location='/emails/{{ email.id }}?from=/emails'">
             <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
               {{ email.datetime_.astimezone(tz).strftime('%b %-d, %Y %-I:%M %p') }}
             </td>
