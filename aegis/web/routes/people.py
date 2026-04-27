@@ -39,10 +39,10 @@ async def people_directory(
     request: Request,
     session: AsyncSession = Depends(get_session),
     q: str = "",
-    department: int | None = None,
-    seniority: str | None = None,
-    needs_review: bool | None = None,
-    is_external: bool | None = None,
+    department: str = "",
+    seniority: str = "",
+    needs_review: str = "",
+    is_external: str = "",
     sort: str = "name",
     order: str = "asc",
     page: int = Query(1, ge=1),
@@ -61,19 +61,22 @@ async def people_directory(
         stmt = stmt.where(search_filter)
         count_stmt = count_stmt.where(search_filter)
 
-    # Apply filters
-    if department is not None:
-        stmt = stmt.where(Person.department_id == department)
-        count_stmt = count_stmt.where(Person.department_id == department)
+    # Apply filters (params come as strings from form, empty = no filter)
+    if department:
+        stmt = stmt.where(Person.department_id == int(department))
+        count_stmt = count_stmt.where(Person.department_id == int(department))
     if seniority:
         stmt = stmt.where(Person.seniority == seniority)
         count_stmt = count_stmt.where(Person.seniority == seniority)
-    if needs_review is not None:
-        stmt = stmt.where(Person.needs_review == needs_review)
-        count_stmt = count_stmt.where(Person.needs_review == needs_review)
-    if is_external is not None:
-        stmt = stmt.where(Person.is_external == is_external)
-        count_stmt = count_stmt.where(Person.is_external == is_external)
+    if needs_review and needs_review.lower() in ("true", "1"):
+        stmt = stmt.where(Person.needs_review.is_(True))
+        count_stmt = count_stmt.where(Person.needs_review.is_(True))
+    if is_external and is_external.lower() in ("true", "1"):
+        stmt = stmt.where(Person.is_external.is_(True))
+        count_stmt = count_stmt.where(Person.is_external.is_(True))
+    elif is_external and is_external.lower() in ("false", "0"):
+        stmt = stmt.where(Person.is_external.is_(False))
+        count_stmt = count_stmt.where(Person.is_external.is_(False))
 
     # Sorting
     sort_col = VALID_SORT_COLS.get(sort, Person.name)
