@@ -29,11 +29,10 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
       </svg>
       <input type="text" name="q" value="{{ q }}" placeholder="Search by description..."
-             class="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+             class="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500"
+             oninput="clearTimeout(this._debounce); this._debounce = setTimeout(() => this.form.submit(), 400)">
     </div>
-    <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
-      Search
-    </button>
+    <button type="submit" class="sr-only">Search</button>
     {% if q or status_filter %}
     <a href="/actions" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
     {% endif %}

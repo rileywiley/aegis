@@ -49,14 +49,15 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
           <input type="text" name="q" value="{{ q }}" placeholder="Name or email..."
-                 class="w-full sm:w-64 rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+                 class="w-full sm:w-64 rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500"
+                 oninput="clearTimeout(this._debounce); this._debounce = setTimeout(() => this.form.submit(), 400)">
         </div>
       </div>
 
       <!-- Department filter -->
       <div class="w-full sm:w-auto">
         <label class="block text-xs font-medium text-gray-500 mb-1">Department</label>
-        <select name="department" class="w-full sm:w-44 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+        <select name="department" onchange="this.form.submit()" class="w-full sm:w-44 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
           <option value="">All</option>
           {% for dept in departments %}
           <option value="{{ dept.id }}" {{ 'selected' if department_filter == dept.id }}>{{ dept.name }}</option>
@@ -67,7 +68,7 @@
       <!-- Seniority filter -->
       <div class="w-full sm:w-auto">
         <label class="block text-xs font-medium text-gray-500 mb-1">Seniority</label>
-        <select name="seniority" class="w-full sm:w-36 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+        <select name="seniority" onchange="this.form.submit()" class="w-full sm:w-36 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
           <option value="">All</option>
           <option value="executive" {{ 'selected' if seniority_filter == 'executive' }}>Executive</option>
           <option value="senior" {{ 'selected' if seniority_filter == 'senior' }}>Senior</option>
@@ -80,7 +81,7 @@
       <!-- External filter -->
       <div class="w-full sm:w-auto">
         <label class="block text-xs font-medium text-gray-500 mb-1">Type</label>
-        <select name="is_external" class="w-full sm:w-32 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+        <select name="is_external" onchange="this.form.submit()" class="w-full sm:w-32 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
           <option value="">All</option>
           <option value="false" {{ 'selected' if is_external_filter == false and is_external_filter is not none }}>Internal</option>
           <option value="true" {{ 'selected' if is_external_filter == true }}>External</option>
@@ -88,9 +89,7 @@
       </div>
 
       <div class="flex gap-2">
-        <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
-          Filter
-        </button>
+        <button type="submit" class="sr-only">Filter</button>
         {% if q or department_filter or seniority_filter or is_external_filter is not none or needs_review_filter is not none %}
         <a href="/people" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">Clear</a>
         {% endif %}

@@ -18,15 +18,16 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
         </svg>
         <input type="text" name="q" value="{{ q }}" placeholder="Search by subject..."
-               class="w-full sm:w-56 rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+               class="w-full sm:w-56 rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500"
+               oninput="clearTimeout(this._debounce); this._debounce = setTimeout(() => this.form.submit(), 400)">
       </div>
-      <select name="email_class" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      <select name="email_class" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
         <option value="">All Classes</option>
         <option value="human" {% if email_class == 'human' %}selected{% endif %}>Human</option>
         <option value="automated" {% if email_class == 'automated' %}selected{% endif %}>Automated</option>
         <option value="newsletter" {% if email_class == 'newsletter' %}selected{% endif %}>Newsletter</option>
       </select>
-      <select name="intent" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      <select name="intent" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
         <option value="">All Intents</option>
         <option value="request" {% if intent == 'request' %}selected{% endif %}>Request</option>
         <option value="fyi" {% if intent == 'fyi' %}selected{% endif %}>FYI</option>
@@ -36,9 +37,7 @@
         <option value="response" {% if intent == 'response' %}selected{% endif %}>Response</option>
         <option value="scheduling" {% if intent == 'scheduling' %}selected{% endif %}>Scheduling</option>
       </select>
-      <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
-        Filter
-      </button>
+      <button type="submit" class="sr-only">Filter</button>
       {% if q or email_class or intent or triage_class %}
       <a href="/emails" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
       {% endif %}

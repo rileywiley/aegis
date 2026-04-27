@@ -35,20 +35,20 @@
   <!-- Filters -->
   <form method="get" action="/asks" class="flex flex-wrap items-center gap-2">
     <input type="hidden" name="tab" value="{{ tab }}">
-    <select name="status" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+    <select name="status" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Statuses</option>
       <option value="open" {% if status == 'open' %}selected{% endif %}>Open</option>
       <option value="in_progress" {% if status == 'in_progress' %}selected{% endif %}>In Progress</option>
       <option value="completed" {% if status == 'completed' %}selected{% endif %}>Completed</option>
       <option value="stale" {% if status == 'stale' %}selected{% endif %}>Stale</option>
     </select>
-    <select name="urgency" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+    <select name="urgency" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Urgency</option>
       <option value="high" {% if urgency == 'high' %}selected{% endif %}>High</option>
       <option value="medium" {% if urgency == 'medium' %}selected{% endif %}>Medium</option>
       <option value="low" {% if urgency == 'low' %}selected{% endif %}>Low</option>
     </select>
-    <select name="ask_type" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+    <select name="ask_type" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Types</option>
       <option value="deliverable" {% if ask_type == 'deliverable' %}selected{% endif %}>Deliverable</option>
       <option value="decision" {% if ask_type == 'decision' %}selected{% endif %}>Decision</option>
@@ -58,14 +58,12 @@
       <option value="review" {% if ask_type == 'review' %}selected{% endif %}>Review</option>
       <option value="info_request" {% if ask_type == 'info_request' %}selected{% endif %}>Info Request</option>
     </select>
-    <select name="source" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+    <select name="source" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Sources</option>
       <option value="email" {% if source == 'email' %}selected{% endif %}>Email</option>
       <option value="chat" {% if source == 'chat' %}selected{% endif %}>Chat</option>
     </select>
-    <button type="submit" class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
-      Filter
-    </button>
+    <button type="submit" class="sr-only">Filter</button>
     {% if status or urgency or ask_type or source %}
     <a href="/asks?tab={{ tab }}" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
     {% endif %}

@@ -25,6 +25,7 @@
       </div>
 
       <select name="source"
+              onchange="this.form.requestSubmit()"
               class="rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-aegis-500 focus:ring-1 focus:ring-aegis-500 bg-white">
         <option value="all" {{ 'selected' if source_filter == 'all' else '' }}>All Sources</option>
         <option value="meetings" {{ 'selected' if source_filter == 'meetings' else '' }}>Meetings</option>
