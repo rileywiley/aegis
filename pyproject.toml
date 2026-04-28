@@ -39,6 +39,9 @@ dev = [
     "ruff>=0.8",
 ]
 
+[tool.setuptools.packages.find]
+include = ["aegis*", "scripts*"]
+
 [project.scripts]
 aegis = "scripts.aegis_ctl:main"
 
