@@ -549,7 +549,7 @@ async def _resolve_borderline_assignments(
     # Build the batch prompt
     batch_items = []
     for idx, (item, candidates) in enumerate(borderline_batch):
-        ws_options = [{"id": ws_id, "name": ws_name, "similarity": round(sim, 3)} for ws_id, ws_name, sim in candidates]
+        ws_options = [{"id": ws_id, "name": ws_name, "similarity": round(float(sim), 3)} for ws_id, ws_name, sim in candidates]
         batch_items.append({
             "index": idx,
             "text": item.text[:500],

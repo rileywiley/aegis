@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -227,6 +228,12 @@ class TeamsPoller:
                 since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             try:
                 messages = await self._graph.get_chat_messages(chat_id, since=since)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 403:
+                    logger.debug("Skipping inaccessible chat %s (403 Forbidden)", chat_id)
+                else:
+                    logger.exception("Failed to fetch messages for chat %s", chat_id)
+                continue
             except Exception:
                 logger.exception("Failed to fetch messages for chat %s", chat_id)
                 continue
@@ -281,6 +288,13 @@ class TeamsPoller:
                         channel.graph_channel_id,
                         since=since,
                     )
+                except httpx.ReadTimeout:
+                    logger.warning(
+                        "Timeout fetching messages for channel %s/%s — skipping this cycle",
+                        team.name,
+                        channel.name,
+                    )
+                    continue
                 except Exception:
                     logger.exception(
                         "Failed to fetch messages for channel %s/%s",
