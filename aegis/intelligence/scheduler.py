@@ -128,6 +128,18 @@ async def _meeting_prep_notification_job() -> None:
         logger.exception("Meeting prep notification check failed")
 
 
+async def _sentiment_aggregation_job() -> None:
+    """Compute sentiment aggregations for all scopes."""
+    try:
+        from aegis.intelligence.sentiment import compute_sentiment_aggregations
+
+        async with async_session_factory() as session:
+            count = await compute_sentiment_aggregations(session)
+            logger.info("Sentiment aggregation complete — %d rows upserted", count)
+    except Exception:
+        logger.exception("Sentiment aggregation job failed")
+
+
 def _parse_time(time_str: str) -> tuple[int, int]:
     """Parse 'HH:MM' string into (hour, minute)."""
     parts = time_str.strip().split(":")
@@ -191,3 +203,13 @@ def register_intelligence_jobs(scheduler: AsyncIOScheduler) -> None:
         replace_existing=True,
     )
     logger.info("Scheduled meeting prep notifications (every 5 min)")
+
+    # Sentiment aggregation: every 6 hours
+    scheduler.add_job(
+        _sentiment_aggregation_job,
+        "interval",
+        hours=6,
+        id="sentiment_aggregation",
+        replace_existing=True,
+    )
+    logger.info("Scheduled sentiment aggregation (every 6 hours)")

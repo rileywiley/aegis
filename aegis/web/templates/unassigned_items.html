@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Unassigned Items{% endblock %}
+{% block page_title %}Unassigned Items{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Unassigned Items</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ total }} items not assigned to any workstream</p>
+    </div>
+    <a href="/workstreams" class="text-sm text-gray-500 hover:text-gray-700">Back to Workstreams</a>
+  </div>
+
+  {% if meetings %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-900">Meetings ({{ meetings | length }})</h3>
+    </div>
+    <div class="divide-y divide-gray-100">
+      {% for m in meetings %}
+      <div class="px-5 py-3 flex items-center justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <a href="/meetings/{{ m.id }}?from=/workstreams/unassigned" class="text-sm font-medium text-gray-900 hover:text-aegis-600">{{ m.title }}</a>
+          <p class="text-xs text-gray-400">{{ m.start_time.astimezone(tz).strftime('%b %-d, %Y %-I:%M %p') if m.start_time else '---' }}</p>
+        </div>
+        <form method="post" action="/workstreams/assign-item" class="flex items-center gap-2">
+          <input type="hidden" name="item_type" value="meeting">
+          <input type="hidden" name="item_id" value="{{ m.id }}">
+          <select name="workstream_id" required class="rounded-md border-gray-300 text-xs py-1 px-2 focus:border-aegis-500">
+            <option value="">Assign to...</option>
+            {% for ws in workstreams %}
+            <option value="{{ ws.id }}">{{ ws.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="rounded-md bg-aegis-600 px-2 py-1 text-xs text-white hover:bg-aegis-700">Assign</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if emails %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-900">Emails ({{ emails | length }})</h3>
+    </div>
+    <div class="divide-y divide-gray-100">
+      {% for e in emails %}
+      <div class="px-5 py-3 flex items-center justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <a href="/emails/{{ e.id }}?from=/workstreams/unassigned" class="text-sm font-medium text-gray-900 hover:text-aegis-600">{{ e.subject or '(No Subject)' }}</a>
+          <p class="text-xs text-gray-400">{{ e.datetime_.astimezone(tz).strftime('%b %-d, %Y %-I:%M %p') if e.datetime_ else '---' }}</p>
+        </div>
+        <form method="post" action="/workstreams/assign-item" class="flex items-center gap-2">
+          <input type="hidden" name="item_type" value="email">
+          <input type="hidden" name="item_id" value="{{ e.id }}">
+          <select name="workstream_id" required class="rounded-md border-gray-300 text-xs py-1 px-2 focus:border-aegis-500">
+            <option value="">Assign to...</option>
+            {% for ws in workstreams %}
+            <option value="{{ ws.id }}">{{ ws.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="rounded-md bg-aegis-600 px-2 py-1 text-xs text-white hover:bg-aegis-700">Assign</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not meetings and not emails %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm px-6 py-16 text-center">
+    <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <p class="mt-4 text-sm text-gray-500">All processed items are assigned to workstreams</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

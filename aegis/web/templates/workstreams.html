@@ -13,12 +13,23 @@
       <p class="mt-1 text-sm text-gray-500">{{ workstreams|length }} workstream{{ 's' if workstreams|length != 1 }}</p>
     </div>
     <div class="flex items-center gap-2">
+      <a href="/workstreams/unassigned"
+         class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        Unassigned Items
+      </a>
+      <button hx-post="/workstreams/detect" hx-target="#detect-result" hx-swap="innerHTML"
+              class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        Detect Workstreams
+      </button>
       <button @click="showCreate = !showCreate"
               class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-medium text-white hover:bg-aegis-700 transition-colors">
         + New Workstream
       </button>
     </div>
   </div>
+
+  <!-- Detection result -->
+  <div id="detect-result"></div>
 
   <!-- Create Workstream Form (inline, toggled) -->
   <div x-show="showCreate" x-cloak x-transition

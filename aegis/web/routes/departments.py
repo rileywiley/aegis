@@ -228,3 +228,54 @@ async def assign_person_to_department(
     person.department_id = dept_id
     await session.commit()
     return RedirectResponse(url=f"/departments/{dept_id}", status_code=303)
+
+
+@router.post("/departments/{dept_id}/remove-person/{person_id}")
+async def remove_person_from_department(
+    request: Request,
+    dept_id: int,
+    person_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Remove a person from this department (sets department_id to NULL)."""
+    person = await session.get(Person, person_id)
+    if person and person.department_id == dept_id:
+        person.department_id = None
+        await session.commit()
+    return RedirectResponse(url=f"/departments/{dept_id}", status_code=303)
+
+
+@router.get("/departments/{dept_id}/people-search")
+async def people_search(
+    request: Request,
+    dept_id: int,
+    q: str = Query(""),
+    session: AsyncSession = Depends(get_session),
+):
+    """HTMX partial: search people by name for department assignment."""
+    from sqlalchemy import or_
+    if not q or len(q) < 2:
+        return HTMLResponse("")
+    pattern = f"%{q}%"
+    stmt = (
+        select(Person)
+        .where(or_(Person.name.ilike(pattern), Person.email.ilike(pattern)))
+        .order_by(Person.name)
+        .limit(10)
+    )
+    result = await session.execute(stmt)
+    people = list(result.scalars().all())
+    if not people:
+        return HTMLResponse('<div class="p-2 text-xs text-gray-400">No matches</div>')
+    html_parts = []
+    for p in people:
+        html_parts.append(
+            f'<form action="/departments/{dept_id}/assign" method="post" class="contents">'
+            f'<input type="hidden" name="person_id" value="{p.id}">'
+            f'<button type="submit" class="w-full text-left px-3 py-2 text-sm hover:bg-aegis-50 transition-colors">'
+            f'{p.name}<span class="text-xs text-gray-400 ml-2">{p.email or ""}</span>'
+            f'</button></form>'
+        )
+    return HTMLResponse(
+        '<div class="divide-y divide-gray-100">' + "".join(html_parts) + '</div>'
+    )

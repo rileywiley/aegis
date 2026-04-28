@@ -706,6 +706,11 @@ async def infer_org_structure(session: AsyncSession) -> dict:
 
     await session.commit()
 
+    # Generate LLM suggestions for needs-review people
+    suggestions_count = await generate_people_suggestions(session)
+
+    await session.commit()
+
     stats = {
         "managers_inferred": managers_inferred,
         "seniority_updated": seniority_updated,
@@ -715,6 +720,116 @@ async def infer_org_structure(session: AsyncSession) -> dict:
         "titles_found": signature_stats["titles_found"],
         "teams_departments_created": teams_dept_stats["departments_created"],
         "teams_people_linked": teams_dept_stats["people_linked"],
+        "llm_suggestions_generated": suggestions_count,
     }
     logger.info("Org inference complete: %s", stats)
     return stats
+
+
+async def generate_people_suggestions(session: AsyncSession, limit: int = 20) -> int:
+    """Generate LLM suggestions for needs-review people without existing suggestions.
+
+    Gathers context from emails and meetings, calls Haiku to suggest
+    title, role, seniority, and department. Writes to Person.llm_suggestion.
+    """
+    import json
+
+    import anthropic
+
+    # Find people needing suggestions
+    stmt = (
+        select(Person)
+        .where(Person.needs_review.is_(True), Person.llm_suggestion.is_(None))
+        .order_by(Person.last_seen.desc())
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    people = list(result.scalars().all())
+
+    if not people:
+        return 0
+
+    client = anthropic.AsyncAnthropic()
+    count = 0
+
+    # Get department names for context
+    dept_stmt = select(Department.id, Department.name)
+    dept_result = await session.execute(dept_stmt)
+    dept_map = {row[0]: row[1] for row in dept_result.all()}
+    dept_names = list(dept_map.values())
+
+    for person in people:
+        try:
+            # Gather context: emails they sent or received
+            context_parts = [f"Name: {person.name}"]
+            if person.email:
+                context_parts.append(f"Email: {person.email}")
+            if person.title:
+                context_parts.append(f"Current title: {person.title}")
+            if person.org:
+                context_parts.append(f"Current org: {person.org}")
+
+            # Recent email subjects involving this person
+            email_stmt = (
+                select(Email.subject, Email.intent)
+                .where(Email.sender_id == person.id)
+                .order_by(Email.datetime_.desc())
+                .limit(5)
+            )
+            email_result = await session.execute(email_stmt)
+            emails = email_result.all()
+            if emails:
+                subjects = [f"- {e[0]} (intent: {e[1]})" for e in emails if e[0]]
+                if subjects:
+                    context_parts.append("Recent emails sent:\n" + "\n".join(subjects))
+
+            # Meeting titles they attended
+            meeting_stmt = (
+                select(Meeting.title)
+                .join(MeetingAttendee, Meeting.id == MeetingAttendee.meeting_id)
+                .where(MeetingAttendee.person_id == person.id)
+                .order_by(Meeting.start_time.desc())
+                .limit(5)
+            )
+            meeting_result = await session.execute(meeting_stmt)
+            meetings = [r[0] for r in meeting_result.all() if r[0]]
+            if meetings:
+                context_parts.append("Recent meetings:\n" + "\n".join(f"- {m}" for m in meetings))
+
+            context = "\n".join(context_parts)
+
+            prompt = f"""\
+Based on the following information about a person, suggest their likely:
+- title (job title)
+- role (functional role like "engineer", "manager", "analyst")
+- seniority (one of: executive, senior, mid, junior, unknown)
+- department (one of: {', '.join(dept_names) if dept_names else 'unknown'})
+- notes (brief reasoning)
+
+Person info:
+{context}
+
+Return a JSON object with keys: title, role, seniority, department, notes.
+Return ONLY the JSON, no other text."""
+
+            response = await client.messages.create(
+                model="claude-haiku-4-5-20241022",
+                max_tokens=300,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            text = response.content[0].text.strip()
+            # Parse JSON from response
+            if "{" in text:
+                json_str = text[text.index("{"):text.rindex("}") + 1]
+                suggestion = json.loads(json_str)
+                person.llm_suggestion = suggestion
+                count += 1
+                logger.info("Generated LLM suggestion for person %d (%s)", person.id, person.name)
+
+        except Exception:
+            logger.debug("Failed to generate suggestion for person %d", person.id, exc_info=True)
+            continue
+
+    return count

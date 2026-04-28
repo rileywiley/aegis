@@ -278,7 +278,8 @@ async def _semantic_search(
             logger.debug("Semantic search query failed", exc_info=True)
             await session.rollback()
 
-    # Compute composite score: similarity * 0.5 + recency * 0.2 + triage_weight * 0.3
+    # Compute composite score: similarity * 0.4 + recency * 0.3 + triage_weight * 0.3
+    # Recency uses 90-day decay so recent items are strongly preferred
     now = datetime.now(timezone.utc)
     for item in all_results:
         sim = float(item.get("similarity") or 0)
@@ -286,10 +287,10 @@ async def _semantic_search(
         dt = item.get("dt")
         if dt and hasattr(dt, "timestamp"):
             age_days = max((now - dt.replace(tzinfo=timezone.utc if dt.tzinfo is None else dt.tzinfo)).days, 0)
-            recency = max(0, 1.0 - (age_days / 365.0))
+            recency = max(0, 1.0 - (age_days / 90.0))
         else:
             recency = 0.0
-        item["composite_score"] = sim * 0.5 + recency * 0.2 + triage_w * 0.3
+        item["composite_score"] = sim * 0.4 + recency * 0.3 + triage_w * 0.3
 
     all_results.sort(key=lambda x: x["composite_score"], reverse=True)
     return all_results[:limit]

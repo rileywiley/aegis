@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     # ── User identity ────────────────────────────────────
     user_email: str = "delemos.ricardo@gmail.com"
 
+    # ── Org domains ─────────────────────────────────────
+    org_email_domains: str = "hawthorneheath.com"  # comma-separated internal domains
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -226,9 +226,27 @@ def cmd_restart() -> None:
     cmd_start()
 
 
+def cmd_backup() -> None:
+    """Run database backup immediately."""
+    backup_script = PROJECT_ROOT / "scripts" / "backup.py"
+    if not backup_script.exists():
+        console.print("[red]Backup script not found at scripts/backup.py[/red]")
+        sys.exit(1)
+    console.print("[bold]Running database backup...[/bold]")
+    result = subprocess.run(
+        [sys.executable, str(backup_script), "--rotate"],
+        cwd=str(PROJECT_ROOT),
+    )
+    if result.returncode == 0:
+        console.print("[green]Backup complete.[/green]")
+    else:
+        console.print("[red]Backup failed.[/red]")
+        sys.exit(1)
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        console.print("[red]Usage: python scripts/aegis_ctl.py {start|stop|status|restart}[/red]")
+        console.print("[red]Usage: aegis {start|stop|status|restart|backup}[/red]")
         sys.exit(1)
 
     command = sys.argv[1].lower()
@@ -237,6 +255,7 @@ def main() -> None:
         "stop": cmd_stop,
         "status": cmd_status,
         "restart": cmd_restart,
+        "backup": cmd_backup,
     }
 
     if command not in commands:

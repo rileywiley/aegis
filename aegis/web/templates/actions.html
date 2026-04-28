@@ -77,13 +77,21 @@
               {% set current_status = item.status or 'open' %}
               {% set current_idx = status_options.index(current_status) if current_status in status_options else 0 %}
               {% set next_status = status_options[(current_idx + 1) % status_options|length] %}
-              <form hx-post="/actions/{{ item.id }}/status" hx-swap="outerHTML" hx-target="this">
-                <input type="hidden" name="new_status" value="{{ next_status }}">
-                <button type="submit"
-                        class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium cursor-pointer transition-colors hover:opacity-80 {{ status_colors.get(current_status, 'bg-gray-100 text-gray-600') }}">
-                  {{ status_labels.get(current_status, current_status) }}
-                </button>
-              </form>
+              <div class="flex items-center gap-1 justify-center">
+                <form hx-post="/actions/{{ item.id }}/status" hx-swap="outerHTML" hx-target="closest td" class="contents">
+                  <input type="hidden" name="new_status" value="{{ next_status }}">
+                  <button type="submit"
+                          class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium cursor-pointer transition-colors hover:opacity-80 {{ status_colors.get(current_status, 'bg-gray-100 text-gray-600') }}">
+                    {{ status_labels.get(current_status, current_status) }}
+                  </button>
+                </form>
+                {% if current_status != 'completed' %}
+                <form hx-post="/actions/{{ item.id }}/status" hx-swap="outerHTML" hx-target="closest td" class="contents">
+                  <input type="hidden" name="new_status" value="completed">
+                  <button type="submit" class="text-green-600 hover:text-green-800 text-xs" title="Mark complete">&#10003;</button>
+                </form>
+                {% endif %}
+              </div>
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-center">
               {% if item.source_meeting_id %}

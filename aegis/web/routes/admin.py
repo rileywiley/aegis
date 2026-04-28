@@ -141,6 +141,14 @@ def _build_sections():
                 ("readiness_heavy_max", "Heavy Max Score", "Score ceiling for 'heavy' workload band", "number", settings.readiness_heavy_max),
             ],
         ),
+        (
+            "System",
+            "Logging and system-level settings.",
+            [
+                ("log_level", "Log Level", "Logging verbosity: DEBUG, INFO, WARNING, ERROR", "text", settings.log_level),
+                ("org_email_domains", "Org Email Domains", "Comma-separated internal email domains (e.g., hawthorneheath.com). People with other domains are flagged as external.", "text", settings.org_email_domains),
+            ],
+        ),
     ]
 
 

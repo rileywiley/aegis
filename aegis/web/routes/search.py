@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
 from aegis.db.engine import get_session
-from aegis.db.models import ChatMessage, Email, Meeting
+from aegis.db.models import ChatMessage, Email, Meeting, Person
 from aegis.processing.embeddings import embed_text
 from aegis.web import templates
 
@@ -149,7 +149,8 @@ async def _keyword_search_chats(
 ) -> list[dict]:
     pattern = f"%{query}%"
     stmt = (
-        select(ChatMessage)
+        select(ChatMessage, Person.name.label("sender_name"))
+        .outerjoin(Person, ChatMessage.sender_id == Person.id)
         .where(
             or_(
                 ChatMessage.body_text.ilike(pattern),
@@ -161,12 +162,16 @@ async def _keyword_search_chats(
     )
     result = await session.execute(stmt)
     items = []
-    for c in result.scalars().all():
+    for row in result.all():
+        c = row[0]
+        sender_name = row[1] or "Unknown"
         preview = c.summary or (c.body_text or "")[:200]
+        body_snippet = (c.body_text or "")[:50]
+        title = f"{sender_name}: {body_snippet}" if body_snippet else sender_name
         items.append({
             "id": c.id,
             "source_type": "chat",
-            "title": c.summary or (c.body_text or "")[:60],
+            "title": title,
             "preview": preview[:200],
             "date": c.datetime_.isoformat() if c.datetime_ else None,
             "url": None,  # No dedicated chat detail page
@@ -224,12 +229,14 @@ async def _semantic_search(
 
     if source_filter in ("all", "chats"):
         sql = text("""
-            SELECT id, summary AS title, body_text AS preview, datetime AS dt,
+            SELECT cm.id, p.name AS sender_name, cm.summary, cm.body_text AS preview,
+                   cm.datetime AS dt,
                    'chat' AS source_type,
-                   1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity
-            FROM chat_messages
-            WHERE embedding IS NOT NULL
-            ORDER BY embedding <=> CAST(:query_embedding AS vector)
+                   1 - (cm.embedding <=> CAST(:query_embedding AS vector)) AS similarity
+            FROM chat_messages cm
+            LEFT JOIN people p ON cm.sender_id = p.id
+            WHERE cm.embedding IS NOT NULL
+            ORDER BY cm.embedding <=> CAST(:query_embedding AS vector)
             LIMIT :limit
         """)
         try:
@@ -260,10 +267,18 @@ def _row_to_result(row: dict, url_prefix: str | None) -> dict:
 
     url = f"{url_prefix}{item_id}?from=/search" if url_prefix and item_id else None
 
+    # Build title — for chats, use "Sender: body snippet" instead of summary
+    source_type = row.get("source_type", "unknown")
+    title = row.get("title") or "Untitled"
+    if source_type == "chat":
+        sender_name = row.get("sender_name") or "Unknown"
+        body_snippet = (str(row.get("preview") or ""))[:50]
+        title = f"{sender_name}: {body_snippet}" if body_snippet else sender_name
+
     return {
         "id": item_id,
-        "source_type": row.get("source_type", "unknown"),
-        "title": row.get("title") or "Untitled",
+        "source_type": source_type,
+        "title": title,
         "preview": (str(row.get("preview") or ""))[:200],
         "date": dt.isoformat() if dt and hasattr(dt, "isoformat") else str(dt) if dt else None,
         "url": url,

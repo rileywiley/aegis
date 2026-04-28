@@ -16,7 +16,7 @@ from aegis.db.repositories import (
     update_chat_ask_status,
     update_email_ask_status,
 )
-from aegis.db.models import Person
+from aegis.db.models import ChatAsk, ChatMessage, Email, EmailAsk, Person
 from aegis.web import templates
 from sqlalchemy import select
 
@@ -73,6 +73,7 @@ async def asks_list(
     urgency: str = Query("", description="Filter by urgency"),
     ask_type: str = Query("", description="Filter by ask type"),
     source: str = Query("", description="Filter by source: all, email, chat"),
+    scope: str = Query("", description="Filter by scope: all, internal, external"),
     page: int = Query(1, ge=1),
     session: AsyncSession = Depends(get_session),
 ):
@@ -111,6 +112,20 @@ async def asks_list(
             person_ids.add(ask["target_id"])
     person_map = await get_persons_by_ids(session, list(person_ids)) if person_ids else {}
 
+    # Apply internal/external scope filter
+    if scope == "internal":
+        asks = [
+            a for a in asks
+            if not _is_external_ask(a, person_map)
+        ]
+        total = len(asks)
+    elif scope == "external":
+        asks = [
+            a for a in asks
+            if _is_external_ask(a, person_map)
+        ]
+        total = len(asks)
+
     total_pages = max(1, (total + per_page - 1) // per_page)
     now_local = datetime.now(tz)
 
@@ -125,12 +140,151 @@ async def asks_list(
             "urgency": urgency,
             "ask_type": ask_type,
             "source": source,
+            "scope": scope,
             "page": page,
             "total_pages": total_pages,
             "total": total,
             "current_time": now_local.strftime("%-I:%M %p %Z"),
             "tz": tz,
             "status_options": _STATUS_OPTIONS,
+            "status_colors": _STATUS_COLORS,
+            "status_labels": _STATUS_LABELS,
+        },
+    )
+
+
+def _is_external_ask(ask: dict, person_map: dict) -> bool:
+    """Check if an ask involves an external person (requester or target)."""
+    for pid_key in ("requester_id", "target_id"):
+        pid = ask.get(pid_key)
+        if pid and pid in person_map:
+            person = person_map[pid]
+            if getattr(person, "is_external", False):
+                return True
+    return False
+
+
+@router.get("/{source_type}/{ask_id}")
+async def ask_detail(
+    request: Request,
+    source_type: str,
+    ask_id: int,
+    from_url: str | None = Query(None, alias="from"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Ask detail view with source context. For chat asks, shows surrounding messages."""
+    from aegis.web.breadcrumb import resolve_breadcrumb
+
+    back_url, back_label = resolve_breadcrumb(request, from_url, "/asks", "Asks")
+    tz = _local_tz()
+
+    ask = None
+    source_item = None
+    surrounding_messages: list = []
+
+    if source_type == "email":
+        ask_obj = await session.get(EmailAsk, ask_id)
+        if ask_obj:
+            ask = {
+                "id": ask_obj.id,
+                "source_type": "email",
+                "description": ask_obj.description,
+                "ask_type": ask_obj.ask_type,
+                "urgency": ask_obj.urgency,
+                "status": ask_obj.status,
+                "requester_id": ask_obj.requester_id,
+                "target_id": ask_obj.target_id,
+                "deadline": ask_obj.deadline,
+            }
+            # Get the source email
+            source_item = await session.get(Email, ask_obj.email_id)
+
+    elif source_type == "chat":
+        ask_obj = await session.get(ChatAsk, ask_id)
+        if ask_obj:
+            ask = {
+                "id": ask_obj.id,
+                "source_type": "chat",
+                "description": ask_obj.description,
+                "ask_type": ask_obj.ask_type,
+                "urgency": ask_obj.urgency,
+                "status": ask_obj.status,
+                "requester_id": ask_obj.requester_id,
+                "target_id": ask_obj.target_id,
+                "deadline": ask_obj.deadline,
+            }
+            # Get the source chat message
+            source_msg = await session.get(ChatMessage, ask_obj.message_id)
+            source_item = source_msg
+            if source_msg and source_msg.chat_id:
+                # Get 5 messages before and after in the same chat
+                before_stmt = (
+                    select(ChatMessage, Person.name.label("sender_name"))
+                    .outerjoin(Person, ChatMessage.sender_id == Person.id)
+                    .where(
+                        ChatMessage.chat_id == source_msg.chat_id,
+                        ChatMessage.datetime_ < source_msg.datetime_,
+                    )
+                    .order_by(ChatMessage.datetime_.desc())
+                    .limit(5)
+                )
+                after_stmt = (
+                    select(ChatMessage, Person.name.label("sender_name"))
+                    .outerjoin(Person, ChatMessage.sender_id == Person.id)
+                    .where(
+                        ChatMessage.chat_id == source_msg.chat_id,
+                        ChatMessage.datetime_ > source_msg.datetime_,
+                    )
+                    .order_by(ChatMessage.datetime_.asc())
+                    .limit(5)
+                )
+                before_result = await session.execute(before_stmt)
+                after_result = await session.execute(after_stmt)
+
+                before_msgs = [
+                    {"msg": row[0], "sender_name": row[1] or "Unknown"}
+                    for row in reversed(before_result.all())
+                ]
+                after_msgs = [
+                    {"msg": row[0], "sender_name": row[1] or "Unknown"}
+                    for row in after_result.all()
+                ]
+
+                # Get sender of the source message
+                source_sender = None
+                if source_msg.sender_id:
+                    source_person = await session.get(Person, source_msg.sender_id)
+                    source_sender = source_person.name if source_person else "Unknown"
+
+                surrounding_messages = (
+                    before_msgs
+                    + [{"msg": source_msg, "sender_name": source_sender or "Unknown", "is_source": True}]
+                    + after_msgs
+                )
+
+    if not ask:
+        return HTMLResponse('<div class="p-8 text-center text-red-600">Ask not found</div>', status_code=404)
+
+    # Resolve person names
+    person_ids = set()
+    if ask.get("requester_id"):
+        person_ids.add(ask["requester_id"])
+    if ask.get("target_id"):
+        person_ids.add(ask["target_id"])
+    person_map = await get_persons_by_ids(session, list(person_ids)) if person_ids else {}
+
+    return templates.TemplateResponse(
+        request,
+        "ask_detail.html",
+        {
+            "ask": ask,
+            "source_item": source_item,
+            "surrounding_messages": surrounding_messages,
+            "person_map": person_map,
+            "back_url": back_url,
+            "back_label": back_label,
+            "current_time": datetime.now(tz).strftime("%-I:%M %p %Z"),
+            "tz": tz,
             "status_colors": _STATUS_COLORS,
             "status_labels": _STATUS_LABELS,
         },

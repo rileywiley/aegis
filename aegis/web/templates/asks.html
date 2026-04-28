@@ -63,8 +63,13 @@
       <option value="email" {% if source == 'email' %}selected{% endif %}>Email</option>
       <option value="chat" {% if source == 'chat' %}selected{% endif %}>Chat</option>
     </select>
+    <select name="scope" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+      <option value="">All Scope</option>
+      <option value="internal" {% if scope == 'internal' %}selected{% endif %}>Internal</option>
+      <option value="external" {% if scope == 'external' %}selected{% endif %}>External</option>
+    </select>
     <button type="submit" class="sr-only">Filter</button>
-    {% if status or urgency or ask_type or source %}
+    {% if status or urgency or ask_type or source or scope %}
     <a href="/asks?tab={{ tab }}" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
     {% endif %}
   </form>
@@ -89,7 +94,7 @@
           {% for ask in asks %}
           <tr class="hover:bg-gray-50 transition-colors">
             <td class="px-6 py-4 text-sm text-gray-900 max-w-sm">
-              <p class="truncate">{{ ask.description }}</p>
+              <a href="/asks/{{ ask.source_type }}/{{ ask.id }}?from=/asks" class="truncate block hover:text-aegis-600">{{ ask.description }}</a>
               {% if ask.deadline %}
               <p class="mt-0.5 text-xs text-gray-400">Deadline: {{ ask.deadline }}</p>
               {% endif %}

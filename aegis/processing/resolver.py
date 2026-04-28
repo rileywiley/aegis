@@ -13,12 +13,25 @@ from rapidfuzz import fuzz
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aegis.config import get_settings
 from aegis.db.models import Person
 from aegis.db.repositories import get_all_people
 
 logger = logging.getLogger(__name__)
 
 FUZZY_THRESHOLD = 80  # minimum score for rapidfuzz name match (lowered for partial names)
+
+
+def _is_external_email(email: str | None) -> bool:
+    """Check if an email address belongs to an external domain."""
+    if not email or "@" not in email:
+        return False
+    settings = get_settings()
+    org_domains = [d.strip().lower() for d in settings.org_email_domains.split(",") if d.strip()]
+    if not org_domains:
+        return False
+    domain = email.split("@", 1)[1].lower()
+    return domain not in org_domains
 
 
 async def resolve_extracted_entities(
@@ -107,6 +120,7 @@ async def resolve_extracted_entities(
                 name=name,
                 email=email,
                 source="meeting",
+                is_external=_is_external_email(email),
                 needs_review=True,
                 first_seen=now,
                 last_seen=now,
