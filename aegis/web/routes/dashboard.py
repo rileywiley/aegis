@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,102 +146,168 @@ async def _compute_workstream_cards(session: AsyncSession) -> dict:
     return {"cards": cards}
 
 
-async def _compute_pending_decisions(session: AsyncSession) -> dict:
-    """Zone 2 tab: Unresolved decisions from recent meetings."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-    stmt = (
-        select(Decision)
-        .where(Decision.datetime_ >= cutoff)
-        .order_by(Decision.datetime_.desc())
-        .limit(20)
-    )
+async def _get_user_person_id(session: AsyncSession) -> int | None:
+    """Look up the user's person_id from their configured email."""
+    user_email = settings.user_email
+    if not user_email:
+        return None
+    stmt = select(Person.id).where(func.lower(Person.email) == user_email.lower())
     result = await session.execute(stmt)
-    decisions = list(result.scalars().all())
+    return result.scalar_one_or_none()
 
+
+async def _compute_needs_your_action(session: AsyncSession) -> dict:
+    """Zone 2 tab: Items where the user is the bottleneck."""
+    user_id = await _get_user_person_id(session)
     items = []
-    for d in decisions:
-        items.append({
-            "id": d.id,
-            "description": d.description,
-            "datetime": d.datetime_.isoformat() if d.datetime_ else None,
-            "source_meeting_id": d.source_meeting_id,
-            "source_email_id": d.source_email_id,
-        })
-    return {"items": items, "count": len(items)}
+    stale_days = settings.stale_action_item_days
 
-
-async def _compute_awaiting_response(session: AsyncSession) -> dict:
-    """Zone 2 tab: Open asks where user is the target."""
-    ea_stmt = (
-        select(EmailAsk)
-        .where(EmailAsk.status == "open")
-        .order_by(EmailAsk.created.desc())
-        .limit(20)
-    )
-    ea_result = await session.execute(ea_stmt)
-    email_asks = list(ea_result.scalars().all())
-
-    ca_stmt = (
-        select(ChatAsk)
-        .where(ChatAsk.status == "open")
-        .order_by(ChatAsk.created.desc())
-        .limit(20)
-    )
-    ca_result = await session.execute(ca_stmt)
-    chat_asks = list(ca_result.scalars().all())
-
-    items = []
-    for ea in email_asks:
-        items.append({
-            "id": ea.id,
-            "description": ea.description,
-            "ask_type": ea.ask_type,
-            "urgency": ea.urgency,
-            "created": ea.created.isoformat() if ea.created else None,
-            "source": "email",
-            "source_id": ea.email_id,
-        })
-    for ca in chat_asks:
-        items.append({
-            "id": ca.id,
-            "description": ca.description,
-            "ask_type": ca.ask_type,
-            "urgency": ca.urgency,
-            "created": ca.created.isoformat() if ca.created else None,
-            "source": "chat",
-            "source_id": ca.message_id,
-        })
-
-    items.sort(key=lambda x: x.get("created") or "", reverse=True)
-    return {"items": items[:20], "count": len(items)}
-
-
-async def _compute_stale_items(session: AsyncSession) -> dict:
-    """Zone 2 tab: Stale action items past threshold."""
-    threshold = datetime.now(timezone.utc) - timedelta(days=settings.stale_action_item_days)
-    stmt = (
-        select(ActionItem)
-        .where(
-            ActionItem.status.in_(["open", "in_progress"]),
-            ActionItem.created <= threshold,
+    if user_id:
+        # Pending decisions where user needs to decide
+        dec_stmt = (
+            select(Decision)
+            .where(Decision.pending_owner_id == user_id, Decision.status == "pending")
+            .order_by(Decision.datetime_.desc())
+            .limit(10)
         )
-        .order_by(ActionItem.created.asc())
-        .limit(20)
-    )
-    result = await session.execute(stmt)
-    items_list = list(result.scalars().all())
+        dec_result = await session.execute(dec_stmt)
+        for d in dec_result.scalars().all():
+            items.append({
+                "item_type": "decision", "id": d.id,
+                "description": d.description,
+                "from_person_id": None,
+                "urgency": "high",
+                "created": d.datetime_.isoformat() if d.datetime_ else None,
+                "source_meeting_id": d.source_meeting_id,
+                "source_email_id": d.source_email_id,
+            })
 
+        # Asks directed at the user
+        ea_stmt = (
+            select(EmailAsk)
+            .where(EmailAsk.target_id == user_id, EmailAsk.status == "open")
+            .order_by(EmailAsk.created.desc())
+            .limit(10)
+        )
+        for ea in (await session.execute(ea_stmt)).scalars().all():
+            items.append({
+                "item_type": "ask", "id": ea.id,
+                "description": ea.description,
+                "from_person_id": ea.requester_id,
+                "urgency": ea.urgency,
+                "created": ea.created.isoformat() if ea.created else None,
+                "source": "email", "source_id": ea.email_id,
+            })
+        ca_stmt = (
+            select(ChatAsk)
+            .where(ChatAsk.target_id == user_id, ChatAsk.status == "open")
+            .order_by(ChatAsk.created.desc())
+            .limit(10)
+        )
+        for ca in (await session.execute(ca_stmt)).scalars().all():
+            items.append({
+                "item_type": "ask", "id": ca.id,
+                "description": ca.description,
+                "from_person_id": ca.requester_id,
+                "urgency": ca.urgency,
+                "created": ca.created.isoformat() if ca.created else None,
+                "source": "chat", "source_id": ca.message_id,
+            })
+
+        # Action items assigned to the user
+        ai_stmt = (
+            select(ActionItem)
+            .where(ActionItem.assignee_id == user_id, ActionItem.status.in_(["open", "in_progress"]))
+            .order_by(ActionItem.created.asc())
+            .limit(10)
+        )
+        threshold = datetime.now(timezone.utc) - timedelta(days=stale_days)
+        for ai in (await session.execute(ai_stmt)).scalars().all():
+            urg = "high" if ai.created and ai.created <= threshold else "medium"
+            items.append({
+                "item_type": "action", "id": ai.id,
+                "description": ai.description,
+                "from_person_id": None,
+                "urgency": urg,
+                "created": ai.created.isoformat() if ai.created else None,
+                "source_meeting_id": ai.source_meeting_id,
+            })
+
+    # Sort: high urgency first, then oldest first
+    urgency_order = {"high": 0, "medium": 1, "low": 2}
+    items.sort(key=lambda x: (urgency_order.get(x.get("urgency", "low"), 2), x.get("created") or ""))
+    return {"items": items[:25], "count": len(items)}
+
+
+async def _compute_awaiting_others(session: AsyncSession) -> dict:
+    """Zone 2 tab: Items where others owe the user."""
+    user_id = await _get_user_person_id(session)
     items = []
-    for ai in items_list:
-        items.append({
-            "id": ai.id,
-            "description": ai.description,
-            "status": ai.status,
-            "created": ai.created.isoformat() if ai.created else None,
-            "assignee_id": ai.assignee_id,
-            "deadline": ai.deadline,
-        })
-    return {"items": items, "count": len(items)}
+    stale_days = settings.stale_action_item_days
+
+    if user_id:
+        # Asks the user made to others
+        ea_stmt = (
+            select(EmailAsk)
+            .where(EmailAsk.requester_id == user_id, EmailAsk.status == "open")
+            .order_by(EmailAsk.created.desc())
+            .limit(15)
+        )
+        for ea in (await session.execute(ea_stmt)).scalars().all():
+            items.append({
+                "item_type": "ask", "id": ea.id,
+                "description": ea.description,
+                "who_owes_id": ea.target_id,
+                "urgency": ea.urgency,
+                "created": ea.created.isoformat() if ea.created else None,
+                "source": "email", "source_id": ea.email_id,
+            })
+        ca_stmt = (
+            select(ChatAsk)
+            .where(ChatAsk.requester_id == user_id, ChatAsk.status == "open")
+            .order_by(ChatAsk.created.desc())
+            .limit(15)
+        )
+        for ca in (await session.execute(ca_stmt)).scalars().all():
+            items.append({
+                "item_type": "ask", "id": ca.id,
+                "description": ca.description,
+                "who_owes_id": ca.target_id,
+                "urgency": ca.urgency,
+                "created": ca.created.isoformat() if ca.created else None,
+                "source": "chat", "source_id": ca.message_id,
+            })
+
+        # Action items assigned to others from meetings user attended
+        from aegis.db.models import MeetingAttendee
+        user_meeting_ids = select(MeetingAttendee.meeting_id).where(
+            MeetingAttendee.person_id == user_id
+        )
+        ai_stmt = (
+            select(ActionItem)
+            .where(
+                ActionItem.assignee_id != user_id,
+                ActionItem.assignee_id.is_not(None),
+                ActionItem.status.in_(["open", "in_progress"]),
+                ActionItem.source_meeting_id.in_(user_meeting_ids),
+            )
+            .order_by(ActionItem.created.asc())
+            .limit(15)
+        )
+        threshold = datetime.now(timezone.utc) - timedelta(days=stale_days)
+        for ai in (await session.execute(ai_stmt)).scalars().all():
+            urg = "high" if ai.created and ai.created <= threshold else "medium"
+            items.append({
+                "item_type": "action", "id": ai.id,
+                "description": ai.description,
+                "who_owes_id": ai.assignee_id,
+                "urgency": urg,
+                "created": ai.created.isoformat() if ai.created else None,
+            })
+
+    urgency_order = {"high": 0, "medium": 1, "low": 2}
+    items.sort(key=lambda x: (urgency_order.get(x.get("urgency", "low"), 2), x.get("created") or ""))
+    return {"items": items[:25], "count": len(items)}
 
 
 async def _compute_drafts_pending(session: AsyncSession) -> dict:
@@ -300,9 +367,8 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
     workstream_cards = ws_data.get("cards", []) if isinstance(ws_data, dict) else []
 
     # Zone 2: Requires attention tabs (from cache)
-    decisions_data = await _get_cached_or_compute(session, "pending_decisions", _compute_pending_decisions)
-    awaiting_data = await _get_cached_or_compute(session, "awaiting_response", _compute_awaiting_response)
-    stale_data = await _get_cached_or_compute(session, "stale_items", _compute_stale_items)
+    needs_action_data = await _get_cached_or_compute(session, "needs_your_action", _compute_needs_your_action)
+    awaiting_others_data = await _get_cached_or_compute(session, "awaiting_others", _compute_awaiting_others)
 
     # Zone 3: Today's meetings — already have from live query
     # Enhance with prep brief availability
@@ -325,13 +391,26 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
             next_meeting = m
             break
 
-    # Resolve person names for drafts
+    # Resolve person names for all dashboard items
     draft_items = drafts_data.get("items", []) if isinstance(drafts_data, dict) else []
-    person_ids = [d["recipient_id"] for d in draft_items if d.get("recipient_id")]
+    needs_action_items = needs_action_data.get("items", []) if isinstance(needs_action_data, dict) else []
+    awaiting_others_items = awaiting_others_data.get("items", []) if isinstance(awaiting_others_data, dict) else []
+
+    person_ids: set[int] = set()
+    for d in draft_items:
+        if d.get("recipient_id"):
+            person_ids.add(d["recipient_id"])
+    for item in needs_action_items:
+        if item.get("from_person_id"):
+            person_ids.add(item["from_person_id"])
+    for item in awaiting_others_items:
+        if item.get("who_owes_id"):
+            person_ids.add(item["who_owes_id"])
+
     person_names: dict[int, str] = {}
     if person_ids:
         from aegis.db.repositories import get_persons_by_ids
-        persons = await get_persons_by_ids(session, person_ids)
+        persons = await get_persons_by_ids(session, list(person_ids))
         person_names = {pid: p.name for pid, p in persons.items()}
 
     # Last sync: most recent last_success from system_health
@@ -342,6 +421,11 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
     if last_sync_time:
         last_sync_tz = last_sync_time.replace(tzinfo=timezone.utc) if last_sync_time.tzinfo is None else last_sync_time
         last_sync_minutes_ago = int((now_utc - last_sync_tz).total_seconds() / 60)
+
+    # Service health alerts — show degraded/down services
+    health_stmt = select(SystemHealth).where(SystemHealth.status.in_(["degraded", "down"]))
+    health_result = await session.execute(health_stmt)
+    unhealthy_services = list(health_result.scalars().all())
 
     return templates.TemplateResponse(
         request,
@@ -357,12 +441,10 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
             # Zone 1
             "workstream_cards": workstream_cards,
             # Zone 2
-            "decisions": decisions_data.get("items", []) if isinstance(decisions_data, dict) else [],
-            "decisions_count": decisions_data.get("count", 0) if isinstance(decisions_data, dict) else 0,
-            "awaiting": awaiting_data.get("items", []) if isinstance(awaiting_data, dict) else [],
-            "awaiting_count": awaiting_data.get("count", 0) if isinstance(awaiting_data, dict) else 0,
-            "stale_items": stale_data.get("items", []) if isinstance(stale_data, dict) else [],
-            "stale_count": stale_data.get("count", 0) if isinstance(stale_data, dict) else 0,
+            "needs_action": needs_action_data.get("items", []) if isinstance(needs_action_data, dict) else [],
+            "needs_action_count": needs_action_data.get("count", 0) if isinstance(needs_action_data, dict) else 0,
+            "awaiting_others": awaiting_others_data.get("items", []) if isinstance(awaiting_others_data, dict) else [],
+            "awaiting_others_count": awaiting_others_data.get("count", 0) if isinstance(awaiting_others_data, dict) else 0,
             # Zone 4
             "drafts": draft_items,
             "drafts_count": drafts_data.get("count", 0) if isinstance(drafts_data, dict) else 0,
@@ -371,6 +453,8 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
             "next_meeting": next_meeting,
             # Last sync
             "last_sync_minutes_ago": last_sync_minutes_ago,
+            # Service health alerts
+            "unhealthy_services": unhealthy_services,
         },
     )
 
@@ -411,8 +495,13 @@ async def send_draft(draft_id: int, session: AsyncSession = Depends(get_session)
         .values(status="sent", sent_at=datetime.now(timezone.utc))
     )
     await session.execute(stmt)
+    # Invalidate drafts cache
+    from sqlalchemy import delete
+    await session.execute(delete(DashboardCache).where(DashboardCache.key == "drafts_pending"))
     await session.commit()
-    return {"status": "sent"}
+    return HTMLResponse(
+        '<li class="px-6 py-3 text-sm text-green-600">Sent</li>'
+    )
 
 
 @router.post("/api/drafts/{draft_id}/discard")
@@ -424,8 +513,55 @@ async def discard_draft(draft_id: int, session: AsyncSession = Depends(get_sessi
         .values(status="discarded")
     )
     await session.execute(stmt)
+    # Invalidate drafts cache
+    from sqlalchemy import delete
+    await session.execute(delete(DashboardCache).where(DashboardCache.key == "drafts_pending"))
     await session.commit()
-    return {"status": "discarded"}
+    return HTMLResponse(
+        '<li class="px-6 py-3 text-sm text-gray-400">Discarded</li>'
+    )
+
+
+async def invalidate_dashboard_cache(
+    session: AsyncSession,
+    keys: list[str] | None = None,
+) -> None:
+    """Delete dashboard cache entries so next page load recomputes fresh data."""
+    if keys:
+        from sqlalchemy import delete
+        stmt = delete(DashboardCache).where(DashboardCache.key.in_(keys))
+    else:
+        from sqlalchemy import delete
+        stmt = delete(DashboardCache)
+    await session.execute(stmt)
+    await session.commit()
+
+
+@router.post("/api/decisions/{decision_id}/resolve")
+async def resolve_decision(
+    decision_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Toggle a decision's status between open and resolved."""
+    decision = await session.get(Decision, decision_id)
+    if not decision:
+        return HTMLResponse('<span class="text-red-600 text-xs">Not found</span>')
+
+    new_status = "resolved" if decision.status != "resolved" else "open"
+    decision.status = new_status
+    # Invalidate cache in same transaction
+    from sqlalchemy import delete
+    await session.execute(delete(DashboardCache).where(DashboardCache.key == "needs_your_action"))
+    await session.commit()
+
+    if new_status == "resolved":
+        return HTMLResponse(
+            '<li class="px-6 py-3 text-sm text-green-600">Resolved</li>'
+        )
+    else:
+        return HTMLResponse(
+            f'<li class="px-6 py-3 text-sm text-yellow-600">Reopened — will reappear on refresh</li>'
+        )
 
 
 @router.get("/api/chat-widget")
@@ -483,9 +619,8 @@ async def refresh_dashboard_cache() -> None:
     async with async_session_factory() as session:
         for key, fn in [
             ("workstream_cards", _compute_workstream_cards),
-            ("pending_decisions", _compute_pending_decisions),
-            ("awaiting_response", _compute_awaiting_response),
-            ("stale_items", _compute_stale_items),
+            ("needs_your_action", _compute_needs_your_action),
+            ("awaiting_others", _compute_awaiting_others),
             ("drafts_pending", _compute_drafts_pending),
             ("todays_meetings", _compute_todays_meetings),
             ("readiness_scores", _compute_readiness_scores),
@@ -507,5 +642,12 @@ async def refresh_dashboard_cache() -> None:
             except Exception:
                 logger.exception("Failed to refresh dashboard cache key: %s", key)
                 await session.rollback()
+
+    # Also refresh nav badge counts
+    try:
+        from aegis.web.nav_counts import get_nav_counts
+        await get_nav_counts()
+    except Exception:
+        pass
 
     logger.info("Dashboard cache refreshed")

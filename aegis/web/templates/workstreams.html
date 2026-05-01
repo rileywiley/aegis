@@ -82,7 +82,7 @@
     <select name="status"
             class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-900 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500"
             onchange="this.form.submit()">
-      <option value="">All Statuses</option>
+      <option value="all" {{ 'selected' if status_filter == 'all' }}>All Statuses</option>
       {% for s in status_options %}
       <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s|capitalize }}</option>
       {% endfor %}

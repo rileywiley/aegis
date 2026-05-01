@@ -51,7 +51,6 @@
     <select name="ask_type" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Types</option>
       <option value="deliverable" {% if ask_type == 'deliverable' %}selected{% endif %}>Deliverable</option>
-      <option value="decision" {% if ask_type == 'decision' %}selected{% endif %}>Decision</option>
       <option value="follow_up" {% if ask_type == 'follow_up' %}selected{% endif %}>Follow Up</option>
       <option value="question" {% if ask_type == 'question' %}selected{% endif %}>Question</option>
       <option value="approval" {% if ask_type == 'approval' %}selected{% endif %}>Approval</option>

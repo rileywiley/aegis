@@ -8,7 +8,10 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
+from sqlalchemy import update as sa_update
+
 from aegis.db.engine import get_session
+from aegis.db.models import DashboardCache, Draft
 from aegis.db.repositories import (
     get_action_items,
     get_persons_by_ids,
@@ -95,6 +98,26 @@ async def update_status(
         raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
 
     await update_action_item_status(session, action_id, new_status)
+
+    # Auto-discard pending nudge drafts and invalidate cache
+    if new_status == "completed":
+        discard_stmt = (
+            sa_update(Draft)
+            .where(
+                Draft.triggered_by_type == "action_item",
+                Draft.triggered_by_id == action_id,
+                Draft.status == "pending_review",
+            )
+            .values(status="discarded")
+        )
+        await session.execute(discard_stmt)
+
+    # Invalidate dashboard cache so changes appear immediately on refresh
+    from sqlalchemy import delete
+    await session.execute(
+        delete(DashboardCache).where(DashboardCache.key.in_(["needs_your_action", "awaiting_others", "drafts_pending"]))
+    )
+    await session.commit()
 
     # Determine next status for cycling
     current_idx = _STATUS_OPTIONS.index(new_status)

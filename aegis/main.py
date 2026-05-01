@@ -30,6 +30,8 @@ async def _run_processing_cycle() -> None:
 
     Must run sequentially — each step depends on the previous one's output.
     """
+    from datetime import datetime, timedelta, timezone
+
     from aegis.processing.triage import triage_batch, apply_triage_results
     from aegis.processing.pipeline import process_pending_meetings
     from aegis.processing.workstream_detector import run_workstream_assignment
@@ -229,7 +231,6 @@ async def _run_processing_cycle() -> None:
                 sig_health = sig_result.scalar_one_or_none()
                 run_sigs = True
                 if sig_health and sig_health.last_success:
-                    from datetime import timedelta
                     last = sig_health.last_success.replace(
                         tzinfo=timezone.utc if sig_health.last_success.tzinfo is None else sig_health.last_success.tzinfo
                     )
@@ -244,9 +245,18 @@ async def _run_processing_cycle() -> None:
                 logger.exception("Signature parsing failed")
                 await session.rollback()
 
-        # Step 7: Update system_health for processing services
+        # Step 7: Retry missing embeddings (items that got zero vectors from API failures)
+        try:
+            from aegis.processing.embeddings import regenerate_missing_embeddings
+            async with async_session_factory() as session:
+                regen_count = await regenerate_missing_embeddings(session)
+                if regen_count:
+                    logger.info("Regenerated %d missing embeddings", regen_count)
+        except Exception:
+            logger.debug("Embedding regeneration failed", exc_info=True)
+
+        # Step 8: Update system_health for processing services
         from aegis.db.repositories import upsert_system_health
-        from datetime import datetime, timezone
 
         async with async_session_factory() as session:
             now = datetime.now(timezone.utc)
@@ -312,6 +322,10 @@ async def lifespan(app: FastAPI):
         overrides = await load_admin_overrides(session)
         if overrides:
             logger.info("Loaded %d admin setting overrides", overrides)
+
+    # Populate nav badge counts
+    from aegis.web.nav_counts import get_nav_counts
+    await get_nav_counts()
 
     # ── Start background services ────────────────────────
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -387,6 +401,7 @@ from aegis.web.routes.people import router as people_router  # noqa: E402
 from aegis.web.routes.org_chart import router as org_chart_router  # noqa: E402
 from aegis.web.routes.workstreams import router as workstreams_router  # noqa: E402
 from aegis.web.routes.actions import router as actions_router  # noqa: E402
+from aegis.web.routes.decisions import router as decisions_router  # noqa: E402
 from aegis.web.routes.departments import router as departments_router  # noqa: E402
 from aegis.web.routes.readiness import router as readiness_router  # noqa: E402
 from aegis.web.routes.emails import router as emails_router  # noqa: E402
@@ -403,6 +418,7 @@ app.include_router(people_router)
 app.include_router(org_chart_router)
 app.include_router(workstreams_router)
 app.include_router(actions_router)
+app.include_router(decisions_router)
 app.include_router(departments_router)
 app.include_router(readiness_router)
 app.include_router(emails_router)

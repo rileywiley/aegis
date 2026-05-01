@@ -30,11 +30,15 @@ class ExtractedActionItem(BaseModel):
     description: str
     assignee: str  # person name who is responsible — REQUIRED
     deadline: str | None = None
+    related_decision_description: str | None = None  # links action to a decision from same meeting
 
 
 class ExtractedDecision(BaseModel):
     description: str
-    decided_by: str  # person name who made/announced it — REQUIRED
+    status: str = "resolved"  # 'resolved' or 'pending'
+    decided_by: str | None = None  # person who made/announced it (if resolved)
+    pending_owner: str | None = None  # person who needs to decide (if pending)
+    outcome: str | None = None  # what was actually decided (if resolved)
 
 
 class ExtractedCommitment(BaseModel):
@@ -63,13 +67,19 @@ Given a transcript and a list of known attendees, extract ALL of the following:
 
 1. **summary**: A concise 2-3 sentence summary of the meeting.
 2. **people**: Every person who speaks or is mentioned. Include name exactly as it appears in the transcript, role (if mentioned), and email (if known from the attendee list).
-3. **action_items**: Tasks assigned or volunteered for. For EACH action item, you MUST identify WHO is responsible based on the speaker label. If "James: I'll resolve that this week" — the assignee is "James". The assignee field is REQUIRED.
-4. **decisions**: Decisions made or announced. For EACH decision, you MUST identify WHO made or announced it based on the speaker label. The decided_by field is REQUIRED.
-5. **commitments**: Promises made by one person to another (e.g. "I'll send it by Thursday"). For EACH commitment, you MUST identify the committer (who promised) based on the speaker label. The committer field is REQUIRED.
+3. **decisions**: Classify each into exactly ONE of:
+   - RESOLVED: A choice, approval, or judgment call that was MADE during the meeting.
+     Example: "We approved Aurora over self-managed RDS" → status=resolved, decided_by=speaker, outcome="Approved Aurora"
+   - PENDING: A decision that needs to be made but wasn't resolved yet.
+     Example: "We need to decide on the Q3 budget by Friday" → status=pending, pending_owner=whoever must decide
+   A decision is NOT a task. It has an outcome (or pending outcome), not a deliverable.
+4. **action_items**: Specific tasks someone committed to or was assigned. The assignee field is REQUIRED.
+   If an action stems from a decision made in the same meeting, include related_decision_description.
+   Example: "Approved $280K budget" → DECISION. "Derek to process allocation" → ACTION ITEM with related_decision_description="Approved $280K budget"
+   Rules: "I'll do X" → ACTION ITEM only (task, not judgment). "We approved X" → DECISION only (judgment, not task). Never both for the same thing.
+5. **commitments**: Promises made by one person to another (e.g. "I'll send it by Thursday"). The committer field is REQUIRED.
 6. **topics**: A list of topic keywords/phrases discussed (3-8 topics).
 7. **sentiment**: Overall meeting sentiment — one of: positive, neutral, tense, negative, urgent.
-
-CRITICAL: The assignee, decided_by, and committer fields are REQUIRED strings — never null. Use the speaker's name exactly as it appears in the transcript (e.g. "James", "Sarah", "You").
 
 Known attendees: {attendees}
 
@@ -77,8 +87,8 @@ Return ONLY valid JSON matching this exact schema (no markdown, no code blocks):
 {{
   "summary": "string",
   "people": [{{"name": "string", "role": "string or null", "email": "string or null"}}],
-  "action_items": [{{"description": "string", "assignee": "string (REQUIRED)", "deadline": "string or null"}}],
-  "decisions": [{{"description": "string", "decided_by": "string (REQUIRED)"}}],
+  "decisions": [{{"description": "string", "status": "resolved|pending", "decided_by": "string or null", "pending_owner": "string or null", "outcome": "string or null"}}],
+  "action_items": [{{"description": "string", "assignee": "string (REQUIRED)", "deadline": "string or null", "related_decision_description": "string or null"}}],
   "commitments": [{{"description": "string", "committer": "string (REQUIRED)", "recipient": "string or null", "deadline": "string or null"}}],
   "topics": ["string"],
   "sentiment": "positive|neutral|tense|negative|urgent"
@@ -184,10 +194,42 @@ async def store_meeting_extraction(
     # resolve_node populates _resolved_people on the extraction dict.
     resolved_people: dict[str, int] = extraction.get("_resolved_people", {})
 
-    # ── Action items ─────────────────────────────────────
+    # ── Decisions (store first so we can link action items) ──
+    decision_map: dict[str, int] = {}  # description -> decision.id
+    for dec in parsed.decisions:
+        decided_by_id = resolved_people.get(dec.decided_by) if dec.decided_by else None
+        pending_owner_id = resolved_people.get(dec.pending_owner) if dec.pending_owner else None
+        embedding = await embed_text(dec.description)
+        decision = Decision(
+            description=dec.description,
+            status=dec.status if dec.status in ("pending", "resolved") else "pending",
+            decided_by=decided_by_id,
+            pending_owner_id=pending_owner_id,
+            outcome=dec.outcome,
+            source_meeting_id=meeting_id,
+            embedding=embedding,
+        )
+        session.add(decision)
+        await session.flush()
+        decision_map[dec.description.lower().strip()] = decision.id
+
+    # ── Action items (link to related decisions) ─────────
     for item in parsed.action_items:
         assignee_id = resolved_people.get(item.assignee) if item.assignee else None
         embedding = await embed_text(item.description)
+
+        # Find related decision by fuzzy matching description
+        related_decision_id = None
+        if item.related_decision_description:
+            rd = item.related_decision_description.lower().strip()
+            # Exact match first, then substring
+            related_decision_id = decision_map.get(rd)
+            if not related_decision_id:
+                for desc, did in decision_map.items():
+                    if rd in desc or desc in rd:
+                        related_decision_id = did
+                        break
+
         await create_action_item(
             session,
             description=item.description,
@@ -195,18 +237,7 @@ async def store_meeting_extraction(
             source_meeting_id=meeting_id,
             deadline=item.deadline,
             embedding=embedding,
-        )
-
-    # ── Decisions ────────────────────────────────────────
-    for dec in parsed.decisions:
-        decided_by_id = resolved_people.get(dec.decided_by) if dec.decided_by else None
-        embedding = await embed_text(dec.description)
-        await create_decision(
-            session,
-            description=dec.description,
-            decided_by=decided_by_id,
-            source_meeting_id=meeting_id,
-            embedding=embedding,
+            related_decision_id=related_decision_id,
         )
 
     # ── Commitments ──────────────────────────────────────

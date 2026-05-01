@@ -49,8 +49,8 @@ class Settings(BaseSettings):
 
     # ── Workstream detection ─────────────────────────────
     workstream_auto_create_confidence: float = 0.7
-    workstream_assign_high_confidence: float = 0.8
-    workstream_assign_low_confidence: float = 0.6
+    workstream_assign_high_confidence: float = 0.55
+    workstream_assign_low_confidence: float = 0.35
     workstream_default_quiet_days: int = 14
 
     # ── Stale item thresholds ────────────────────────────

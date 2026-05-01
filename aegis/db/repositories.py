@@ -288,7 +288,18 @@ async def create_workstream(
     confidence: float = 1.0,
     pinned: bool = False,
 ) -> Workstream:
-    """Create a new workstream."""
+    """Create a new workstream with auto-generated embedding."""
+    # Generate embedding from name + description
+    embedding = None
+    try:
+        from aegis.processing.embeddings import embed_text
+        embed_input = name
+        if description:
+            embed_input += " " + description
+        embedding = await embed_text(embed_input)
+    except Exception:
+        logger.warning("Failed to generate embedding for new workstream '%s'", name)
+
     ws = Workstream(
         name=name,
         description=description,
@@ -299,6 +310,7 @@ async def create_workstream(
         confidence=confidence,
         pinned=pinned,
         is_managed=owner_id is not None,
+        embedding=embedding,
     )
     session.add(ws)
     await session.commit()
@@ -309,14 +321,26 @@ async def create_workstream(
 async def update_workstream(
     session: AsyncSession, workstream_id: int, **kwargs: object
 ) -> Workstream | None:
-    """Update workstream fields. Returns updated workstream or None if not found."""
+    """Update workstream fields. Re-generates embedding if name or description changed."""
     ws = await session.get(Workstream, workstream_id)
     if ws is None:
         return None
+    regen_embedding = "name" in kwargs or "description" in kwargs
     for key, value in kwargs.items():
         if hasattr(ws, key):
             setattr(ws, key, value)
     ws.updated = datetime.utcnow()
+
+    if regen_embedding:
+        try:
+            from aegis.processing.embeddings import embed_text
+            embed_input = ws.name
+            if ws.description:
+                embed_input += " " + ws.description
+            ws.embedding = await embed_text(embed_input)
+        except Exception:
+            logger.warning("Failed to regenerate embedding for workstream %d", workstream_id)
+
     await session.commit()
     await session.refresh(ws)
     return ws
@@ -867,14 +891,13 @@ async def get_department_by_id(
 
 
 async def get_department_members(
-    session: AsyncSession, dept_id: int
+    session: AsyncSession, dept_id: int, include_external: bool = False
 ) -> list[Person]:
-    """Fetch all people belonging to a department."""
-    stmt = (
-        select(Person)
-        .where(Person.department_id == dept_id)
-        .order_by(Person.name)
-    )
+    """Fetch people belonging to a department. Excludes external by default."""
+    stmt = select(Person).where(Person.department_id == dept_id)
+    if not include_external:
+        stmt = stmt.where(Person.is_external.is_(False))
+    stmt = stmt.order_by(Person.name)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

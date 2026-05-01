@@ -4,18 +4,34 @@ import asyncio
 import logging
 
 from aegis.config import get_settings
+from aegis.db.admin_config import _admin_overrides
 
 logger = logging.getLogger(__name__)
+
+
+def _is_notify_enabled() -> bool:
+    """Check notify_macos from admin overrides first, then config default."""
+    # Check in-memory admin override cache (written by admin panel saves)
+    if "notify_macos" in _admin_overrides:
+        val = _admin_overrides["notify_macos"]
+        # Handle JSONB dict formats
+        if isinstance(val, dict):
+            val = val.get("v", val.get("value", val))
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() not in ("false", "0", "no")
+        return bool(val)
+    return get_settings().notify_macos
 
 
 async def notify(title: str, message: str, sound: bool = True) -> None:
     """Send a macOS notification via osascript.
 
-    No-op if settings.notify_macos is False.
+    No-op if notify_macos is disabled in admin settings.
     Escapes quotes in title/message for AppleScript safety.
     """
-    settings = get_settings()
-    if not settings.notify_macos:
+    if not _is_notify_enabled():
         return
 
     # Escape double quotes and backslashes for AppleScript string literals

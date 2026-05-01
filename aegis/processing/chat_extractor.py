@@ -62,7 +62,7 @@ Given the chat message below, extract:
 2. **intent**: The primary intent — one of: request, fyi, decision_needed, follow_up, question, response.
 3. **requires_response**: Whether the sender expects a reply (true/false).
 4. **asks**: Any specific asks or requests. For each, identify:
-   - ask_type: deliverable, decision, follow_up, question, approval, review, info_request
+   - ask_type: deliverable, follow_up, question, approval, review, info_request (do NOT use 'decision')
    - description: what is being asked
    - requester: who is asking (sender name)
    - target: who it is directed at (null if unclear)
@@ -293,9 +293,17 @@ async def store_chat_extraction(
         target_id = resolved_people.get(ask.target) if ask.target else None
         embedding = await embed_text(ask.description)
 
+        # Map 'decision' ask_type to 'approval' (removed from enum)
+        ask_type = ask.ask_type
+        if ask_type == "decision":
+            ask_type = "approval"
+        valid_types = {"deliverable", "follow_up", "question", "approval", "review", "info_request"}
+        if ask_type not in valid_types:
+            ask_type = "info_request"
+
         chat_ask = ChatAsk(
             message_id=message_id,
-            ask_type=ask.ask_type,
+            ask_type=ask_type,
             description=ask.description,
             requester_id=requester_id,
             target_id=target_id,

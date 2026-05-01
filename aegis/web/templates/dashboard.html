@@ -4,7 +4,7 @@
 {% block page_title %}Command Center{% endblock %}
 
 {% block content %}
-<div x-data="{ chatOpen: false, attentionTab: 'decisions' }" class="space-y-6">
+<div x-data="{ chatOpen: false, attentionTab: 'needs_action' }" class="space-y-6">
 
   <!-- Date header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -21,6 +21,27 @@
     </div>
     {% endif %}
   </div>
+
+  <!-- Service health alerts -->
+  {% if unhealthy_services %}
+  <div class="rounded-xl border border-amber-300 bg-amber-50 p-4">
+    <div class="flex items-start gap-3">
+      <svg class="h-5 w-5 text-amber-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+      </svg>
+      <div>
+        <p class="text-sm font-medium text-amber-800">Service Issue Detected</p>
+        {% for svc in unhealthy_services %}
+        <p class="mt-1 text-xs text-amber-700">
+          <span class="font-medium">{{ svc.service }}</span>
+          <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ml-1 {{ 'bg-red-100 text-red-700' if svc.status == 'down' else 'bg-amber-100 text-amber-700' }}">{{ svc.status }}</span>
+          {% if svc.last_error_message %} — {{ svc.last_error_message }}{% endif %}
+        </p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- ═══════════════════════════════════════════════════ -->
   <!-- DAILY BRIEFING                                      -->
@@ -129,9 +150,9 @@
   <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
     <!-- ═══════════════════════════════════════════════════ -->
-    <!-- ZONE 3: Today's Meetings — spans 2 cols on xl      -->
+    <!-- ZONE 3: Today's Meetings — 1 col on xl             -->
     <!-- ═══════════════════════════════════════════════════ -->
-    <div class="xl:col-span-2">
+    <div>
       <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <div class="flex items-center gap-2">
@@ -159,10 +180,10 @@
     </div>
 
     <!-- Right column -->
-    <div class="space-y-6">
+    <div class="xl:col-span-2 space-y-6">
 
       <!-- ═══════════════════════════════════════════════ -->
-      <!-- ZONE 2: Requires Attention (tabbed)             -->
+      <!-- ZONE 2: Requires Attention (directional tabs)   -->
       <!-- ═══════════════════════════════════════════════ -->
       <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="border-b border-gray-100 px-6 py-4">
@@ -171,119 +192,127 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
             </svg>
             <h3 class="text-base font-semibold text-gray-900">Requires Attention</h3>
+            <span class="text-xs text-gray-400 ml-2">
+              {% if needs_action_count or awaiting_others_count %}
+                {{ needs_action_count }} need{{ 's' if needs_action_count != 1 }} your action
+                &middot;
+                {{ awaiting_others_count }} awaiting others
+              {% endif %}
+            </span>
           </div>
         </div>
 
         <!-- Tabs -->
         <div class="border-b border-gray-100 px-6">
           <nav class="flex gap-4 -mb-px">
-            <button @click="attentionTab = 'decisions'"
-                    :class="attentionTab === 'decisions' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
+            <button @click="attentionTab = 'needs_action'"
+                    :class="attentionTab === 'needs_action' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
                     class="border-b-2 pb-2 pt-3 text-xs font-medium transition-colors">
-              Decisions
-              {% if decisions_count %}<span class="ml-1 rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[10px]">{{ decisions_count }}</span>{% endif %}
+              Needs Your Action
+              {% if needs_action_count %}<span class="ml-1 rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[10px]">{{ needs_action_count }}</span>{% endif %}
             </button>
-            <button @click="attentionTab = 'awaiting'"
-                    :class="attentionTab === 'awaiting' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
+            <button @click="attentionTab = 'awaiting_others'"
+                    :class="attentionTab === 'awaiting_others' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
                     class="border-b-2 pb-2 pt-3 text-xs font-medium transition-colors">
-              Awaiting
-              {% if awaiting_count %}<span class="ml-1 rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 text-[10px]">{{ awaiting_count }}</span>{% endif %}
-            </button>
-            <button @click="attentionTab = 'stale'"
-                    :class="attentionTab === 'stale' ? 'border-aegis-500 text-aegis-600' : 'border-transparent text-gray-400 hover:text-gray-600'"
-                    class="border-b-2 pb-2 pt-3 text-xs font-medium transition-colors">
-              Stale
-              {% if stale_count %}<span class="ml-1 rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px]">{{ stale_count }}</span>{% endif %}
+              Awaiting Others
+              {% if awaiting_others_count %}<span class="ml-1 rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 text-[10px]">{{ awaiting_others_count }}</span>{% endif %}
             </button>
           </nav>
         </div>
 
         <!-- Tab content -->
-        <div class="max-h-64 overflow-y-auto">
+        <div class="max-h-80 overflow-y-auto">
 
-          <!-- Decisions tab -->
-          <div x-show="attentionTab === 'decisions'">
-            {% if decisions %}
+          <!-- Needs Your Action tab -->
+          <div x-show="attentionTab === 'needs_action'">
+            {% if needs_action %}
             <ul class="divide-y divide-gray-50">
-              {% for d in decisions[:8] %}
-              <li class="px-6 py-3">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <p class="text-sm text-gray-800 line-clamp-2">{{ d.description }}</p>
-                    <p class="mt-1 text-xs text-gray-400">
-                      {% if d.datetime %}{{ d.datetime[:10] }}{% endif %}
-                      {% if d.source_meeting_id %} — <a href="/meetings/{{ d.source_meeting_id }}?from=/" class="text-aegis-600 hover:underline">Meeting</a>{% endif %}
-                    </p>
-                  </div>
-                  <a href="/respond?source_type=decision&source_id={{ d.id }}"
-                     class="shrink-0 rounded-md bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700 hover:bg-aegis-100 transition-colors">
-                    Respond
-                  </a>
-                </div>
-              </li>
-              {% endfor %}
-            </ul>
-            {% else %}
-            <div class="px-6 py-6 text-center">
-              <p class="text-xs text-gray-400">No pending decisions.</p>
-            </div>
-            {% endif %}
-          </div>
-
-          <!-- Awaiting tab -->
-          <div x-show="attentionTab === 'awaiting'" x-cloak>
-            {% if awaiting %}
-            <ul class="divide-y divide-gray-50">
-              {% for a in awaiting[:8] %}
+              {% for item in needs_action[:12] %}
               <li class="px-6 py-3">
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm text-gray-800 line-clamp-2">{{ a.description }}</p>
+                    <div class="flex items-center gap-1.5 mb-1">
+                      {% if item.item_type == 'decision' %}
+                      <span class="inline-flex items-center rounded-full bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">Decision</span>
+                      {% elif item.item_type == 'ask' %}
+                      <span class="inline-flex items-center rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">Ask</span>
+                      {% elif item.item_type == 'action' %}
+                      <span class="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Action</span>
+                      {% endif %}
+                      {% if item.urgency == 'high' %}
+                      <span class="inline-flex items-center rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">Urgent</span>
+                      {% endif %}
+                      {% if item.from_person_id and person_names.get(item.from_person_id) %}
+                      <span class="text-[10px] text-gray-400">from {{ person_names[item.from_person_id] }}</span>
+                      {% endif %}
+                    </div>
+                    <p class="text-sm text-gray-800 line-clamp-2">{{ item.description }}</p>
+                    <p class="mt-0.5 text-[10px] text-gray-400">
+                      {% if item.created %}{{ item.created[:10] }}{% endif %}
+                    </p>
                   </div>
-                  <div class="flex shrink-0 items-center gap-1.5">
-                    <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium
-                      {% if a.urgency == 'high' %}bg-red-50 text-red-600
-                      {% elif a.urgency == 'medium' %}bg-amber-50 text-amber-600
-                      {% else %}bg-gray-100 text-gray-500{% endif %}">
-                      {{ a.urgency }}
-                    </span>
-                    <a href="/respond?source_type={{ a.source }}_ask&source_id={{ a.id }}"
-                       class="rounded-md bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700 hover:bg-aegis-100 transition-colors">
-                      Respond
-                    </a>
+                  <div class="flex shrink-0 gap-1">
+                    {% if item.item_type == 'decision' %}
+                    <a href="/respond?source_type=decision&source_id={{ item.id }}"
+                       class="rounded-md bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700 hover:bg-aegis-100">Respond</a>
+                    <button hx-post="/api/decisions/{{ item.id }}/resolve" hx-swap="outerHTML" hx-target="closest li"
+                            class="rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100">Resolve</button>
+                    {% elif item.item_type == 'ask' %}
+                    <a href="/respond?source_type={{ item.source }}_ask&source_id={{ item.id }}"
+                       class="rounded-md bg-aegis-50 px-2 py-1 text-xs font-medium text-aegis-700 hover:bg-aegis-100">Respond</a>
+                    {% elif item.item_type == 'action' %}
+                    <form hx-post="/actions/{{ item.id }}/status" hx-swap="outerHTML" hx-target="closest li">
+                      <input type="hidden" name="new_status" value="completed">
+                      <button type="submit" class="rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100">Complete</button>
+                    </form>
+                    {% endif %}
                   </div>
                 </div>
-                <p class="mt-1 text-xs text-gray-400">
-                  {{ a.source }} ask
-                  {% if a.created %} — {{ a.created[:10] }}{% endif %}
-                </p>
               </li>
               {% endfor %}
             </ul>
             {% else %}
-            <div class="px-6 py-6 text-center">
-              <p class="text-xs text-gray-400">No pending asks awaiting your response.</p>
+            <div class="px-6 py-8 text-center">
+              <p class="text-xs text-gray-400">Nothing needs your action right now.</p>
             </div>
             {% endif %}
           </div>
 
-          <!-- Stale tab -->
-          <div x-show="attentionTab === 'stale'" x-cloak>
-            {% if stale_items %}
+          <!-- Awaiting Others tab -->
+          <div x-show="attentionTab === 'awaiting_others'" x-cloak>
+            {% if awaiting_others %}
             <ul class="divide-y divide-gray-50">
-              {% for s in stale_items[:8] %}
+              {% for item in awaiting_others[:12] %}
               <li class="px-6 py-3">
-                <p class="text-sm text-gray-800 line-clamp-2">{{ s.description }}</p>
-                <p class="mt-1 text-xs text-gray-400">
-                  Since {{ s.created[:10] if s.created else 'unknown' }}
-                  {% if s.deadline %} — Deadline: {{ s.deadline }}{% endif %}
-                </p>
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 mb-1">
+                      {% if item.item_type == 'ask' %}
+                      <span class="inline-flex items-center rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">Ask</span>
+                      {% elif item.item_type == 'action' %}
+                      <span class="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Action</span>
+                      {% endif %}
+                      {% if item.urgency == 'high' %}
+                      <span class="inline-flex items-center rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">Overdue</span>
+                      {% endif %}
+                      {% if item.who_owes_id and person_names.get(item.who_owes_id) %}
+                      <span class="text-[10px] text-gray-400">{{ person_names[item.who_owes_id] }} owes this</span>
+                      {% endif %}
+                    </div>
+                    <p class="text-sm text-gray-800 line-clamp-2">{{ item.description }}</p>
+                    <p class="mt-0.5 text-[10px] text-gray-400">
+                      {% if item.created %}{{ item.created[:10] }}{% endif %}
+                    </p>
+                  </div>
+                  <a href="/respond?source_type={{ item.source|default('email') }}_ask&source_id={{ item.id }}"
+                     class="shrink-0 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">Nudge</a>
+                </div>
               </li>
               {% endfor %}
             </ul>
             {% else %}
-            <div class="px-6 py-6 text-center">
-              <p class="text-xs text-gray-400">No stale action items. Nice work!</p>
+            <div class="px-6 py-8 text-center">
+              <p class="text-xs text-gray-400">No outstanding items from others.</p>
             </div>
             {% endif %}
           </div>

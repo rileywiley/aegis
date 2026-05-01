@@ -11,7 +11,7 @@ import logging
 import math
 from datetime import date, datetime, timedelta, timezone
 
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, RateLimitError as AnthropicRateLimitError, APIStatusError as AnthropicAPIError
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -483,7 +483,7 @@ async def run_workstream_assignment(session: AsyncSession) -> dict[str, int]:
             if not ws_emb:
                 continue
             sim = cosine_similarity(item.embedding, ws_emb)
-            if sim >= 0.4:  # Pre-filter threshold
+            if sim >= 0.25:  # Pre-filter threshold
                 candidates.append((ws.id, ws.name, sim))
 
         if not candidates:
@@ -530,6 +530,56 @@ async def run_workstream_assignment(session: AsyncSession) -> dict[str, int]:
 
     logger.info("Layer 2 complete: %d assigned, %d unassigned", items_assigned, items_unassigned)
     return {"items_assigned": items_assigned, "items_unassigned": items_unassigned}
+
+
+def _parse_json_response(text: str) -> list[dict]:
+    """Robustly parse JSON from LLM response text.
+
+    Handles: proper arrays, markdown-fenced JSON, concatenated objects,
+    single objects, and newline-delimited JSON.
+    """
+    # Strip markdown fences if present
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        cleaned = "\n".join(lines).strip()
+
+    # Try parsing as a JSON array first
+    if "[" in cleaned and "]" in cleaned:
+        try:
+            json_str = cleaned[cleaned.index("["):cleaned.rindex("]") + 1]
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+
+    # Try parsing each line as a separate JSON object (NDJSON)
+    results = []
+    for line in cleaned.split("\n"):
+        line = line.strip().rstrip(",")
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                results.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    if results:
+        return results
+
+    # Try parsing concatenated objects: {...}{...}
+    if "{" in cleaned:
+        import re
+        objects = re.findall(r'\{[^{}]+\}', cleaned)
+        for obj_str in objects:
+            try:
+                results.append(json.loads(obj_str))
+            except json.JSONDecodeError:
+                continue
+
+    if not results:
+        logger.warning("Haiku returned unparseable response: %s", text[:200])
+
+    return results
 
 
 async def _resolve_borderline_assignments(
@@ -579,10 +629,10 @@ Items:
             session, response.usage.input_tokens, response.usage.output_tokens, "workstream_assignment"
         )
 
-        # Parse JSON from response
-        if "[" in text:
-            json_str = text[text.index("["):text.rindex("]") + 1]
-            results = json.loads(json_str)
+        # Parse JSON from response — handle markdown fences, concatenated objects, etc.
+        results = _parse_json_response(text)
+
+        if results:
 
             for result in results:
                 idx = result.get("index")
@@ -606,6 +656,14 @@ Items:
                 assigned += 1
 
         await session.commit()
+    except AnthropicRateLimitError as e:
+        logger.error("Anthropic rate limit during workstream assignment: %s", e)
+        from aegis.processing.embeddings import _report_api_error
+        await _report_api_error("llm_api", f"Anthropic rate limit: {e}")
+    except AnthropicAPIError as e:
+        logger.error("Anthropic API error during workstream assignment: %s", e.message)
+        from aegis.processing.embeddings import _report_api_error
+        await _report_api_error("llm_api", f"Anthropic API error: {e.message}")
     except Exception:
         logger.exception("Haiku borderline assignment batch failed")
 

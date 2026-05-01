@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
@@ -310,6 +310,30 @@ async def update_ask_status(
         await update_chat_ask_status(session, ask_id, new_status)
     else:
         raise HTTPException(status_code=400, detail=f"Invalid source type: {source_type}")
+
+    # Auto-discard pending nudge drafts for completed items
+    if new_status == "completed":
+        triggered_type = "email_ask" if source_type == "email" else "chat_ask"
+        from aegis.db.models import Draft
+        discard_stmt = (
+            sa_update(Draft)
+            .where(
+                Draft.triggered_by_type == triggered_type,
+                Draft.triggered_by_id == ask_id,
+                Draft.status == "pending_review",
+            )
+            .values(status="discarded")
+        )
+        await session.execute(discard_stmt)
+
+    # Invalidate dashboard cache so changes appear immediately on refresh
+    from aegis.db.models import DashboardCache
+    await session.execute(
+        delete(DashboardCache).where(
+            DashboardCache.key.in_(["needs_your_action", "awaiting_others", "drafts_pending"])
+        )
+    )
+    await session.commit()
 
     # Return click-to-cycle badge (matching actions page pattern)
     current_idx = _STATUS_OPTIONS.index(new_status)

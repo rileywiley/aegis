@@ -66,6 +66,58 @@ _ITEM_TYPE_COLORS = {
 }
 
 
+async def _generate_workstream_summary(
+    ws, items: list, item_details: dict[str, dict[int, dict]],
+) -> str:
+    """Generate a narrative status update for a workstream using Haiku."""
+    import logging
+    logger = logging.getLogger("aegis")
+
+    # Build context from the most recent items (limit to keep prompt small)
+    context_lines = [f"Workstream: {ws.name}"]
+    if ws.description:
+        context_lines.append(f"Description: {ws.description}")
+    context_lines.append(f"Status: {ws.status}")
+    context_lines.append("")
+
+    count = 0
+    for item in items[:25]:  # Most recent 25 items
+        detail = item_details.get(item.item_type, {}).get(item.item_id, {})
+        if not detail:
+            continue
+        label = _ITEM_TYPE_LABELS.get(item.item_type, item.item_type)
+        title = detail.get("title") or ""
+        summary = detail.get("summary") or ""
+        status = detail.get("status") or ""
+        text = f"- [{label}] {title} {summary}".strip()[:150]
+        if status:
+            text += f" (status: {status})"
+        context_lines.append(text)
+        count += 1
+
+    if count == 0:
+        return ""
+
+    context = "\n".join(context_lines)
+
+    try:
+        from anthropic import AsyncAnthropic
+        client = AsyncAnthropic(api_key=get_settings().anthropic_api_key)
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=250,
+            temperature=0.3,
+            messages=[{"role": "user", "content": f"""\
+Based on the following workstream data, write a 2-3 sentence status update as if you were giving a brief verbal update in a meeting. Focus on: what's happening, what's pending, and any blockers or decisions needed. Be specific and concise. Do not use bullet points.
+
+{context}"""}],
+        )
+        return response.content[0].text.strip()
+    except Exception:
+        logger.exception("Failed to generate workstream summary for '%s'", ws.name)
+        return ""
+
+
 @router.get("")
 async def workstreams_list(
     request: Request,
@@ -73,9 +125,11 @@ async def workstreams_list(
     status: str = Query("", description="Filter by status"),
     session: AsyncSession = Depends(get_session),
 ):
+    # Default to "active" filter when no status specified
+    effective_status = status if status else "active"
     workstream_list = await get_workstreams(
         session,
-        status_filter=status if status else None,
+        status_filter=effective_status if effective_status != "all" else None,
         search=q if q else None,
     )
 
@@ -94,7 +148,7 @@ async def workstreams_list(
             "item_counts": item_counts,
             "owner_names": owner_names,
             "q": q,
-            "status_filter": status,
+            "status_filter": effective_status,
             "status_options": _STATUS_OPTIONS,
             "current_time": _current_time(),
         },
@@ -183,6 +237,35 @@ async def workstream_detail(
         names = await get_workstream_owner_names(session, [ws.owner_id])
         owner_name = names.get(ws.owner_id)
 
+    # Resolve item content for timeline display
+    from aegis.db.models import (
+        ActionItem, ChatAsk, ChatMessage, Decision, Commitment, Email, EmailAsk,
+    )
+    item_details: dict[str, dict[int, dict]] = {}
+    _type_model_map = {
+        "meeting": (Meeting, lambda m: {"title": m.title, "summary": m.summary}),
+        "email": (Email, lambda e: {"title": e.subject, "summary": e.summary or e.body_preview}),
+        "chat_message": (ChatMessage, lambda c: {"title": None, "summary": c.summary or c.body_preview or (c.body_text or "")[:120]}),
+        "action_item": (ActionItem, lambda a: {"title": None, "summary": a.description, "status": a.status}),
+        "decision": (Decision, lambda d: {"title": None, "summary": d.description}),
+        "commitment": (Commitment, lambda c: {"title": None, "summary": c.description}),
+        "email_ask": (EmailAsk, lambda a: {"title": None, "summary": a.description, "status": a.status}),
+        "chat_ask": (ChatAsk, lambda a: {"title": None, "summary": a.description, "status": a.status}),
+    }
+    for item in items:
+        if item.item_type not in item_details:
+            item_details[item.item_type] = {}
+        if item.item_type in _type_model_map:
+            model_cls, extractor = _type_model_map[item.item_type]
+            obj = await session.get(model_cls, item.item_id)
+            if obj:
+                item_details[item.item_type][item.item_id] = extractor(obj)
+
+    # Generate LLM narrative summary from linked item content
+    written_summary = ""
+    if items:
+        written_summary = await _generate_workstream_summary(ws, items, item_details)
+
     tz = _local_tz()
 
     return templates.TemplateResponse(
@@ -191,6 +274,8 @@ async def workstream_detail(
         {
             "ws": ws,
             "items": items,
+            "item_details": item_details,
+            "written_summary": written_summary,
             "stakeholders": stakeholders,
             "milestones": milestones,
             "owner_name": owner_name,
@@ -304,12 +389,19 @@ async def trigger_workstream_detection(
     logger = logging.getLogger("aegis")
 
     try:
-        from aegis.processing.workstream_detector import run_detection
-        # Run in background so the response returns immediately
-        asyncio.create_task(run_detection(session))
+        from aegis.db.engine import async_session_factory
+        from aegis.processing.workstream_detector import run_weekly_clustering
+
+        async def _run():
+            async with async_session_factory() as bg_session:
+                await run_weekly_clustering(bg_session)
+
+        asyncio.create_task(_run())
         return HTMLResponse(
             '<div class="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">'
-            'Workstream detection started. Results will appear shortly.</div>'
+            'Workstream detection started. Page will refresh in 10 seconds...'
+            '</div>'
+            '<script>setTimeout(() => window.location.reload(), 10000)</script>'
         )
     except Exception:
         logger.exception("Failed to start workstream detection")
@@ -336,11 +428,19 @@ async def trigger_workstream_scan(
         raise HTTPException(status_code=404, detail="Workstream not found")
 
     try:
-        from aegis.processing.workstream_detector import run_assignment
-        asyncio.create_task(run_assignment(session))
+        from aegis.db.engine import async_session_factory
+        from aegis.processing.workstream_detector import run_workstream_assignment
+
+        async def _run():
+            async with async_session_factory() as bg_session:
+                await run_workstream_assignment(bg_session)
+
+        asyncio.create_task(_run())
         return HTMLResponse(
             '<div class="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">'
-            'Item scan started. New items will appear shortly.</div>'
+            'Item scan started. Page will refresh in 10 seconds...'
+            '</div>'
+            '<script>setTimeout(() => window.location.reload(), 10000)</script>'
         )
     except Exception:
         logger.exception("Failed to start workstream item scan")

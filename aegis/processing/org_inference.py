@@ -749,7 +749,8 @@ async def generate_people_suggestions(session: AsyncSession, limit: int = 20) ->
     if not people:
         return 0
 
-    client = anthropic.AsyncAnthropic()
+    from aegis.config import get_settings
+    client = anthropic.AsyncAnthropic(api_key=get_settings().anthropic_api_key)
     count = 0
 
     # Get department names for context

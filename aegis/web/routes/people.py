@@ -77,6 +77,10 @@ async def people_directory(
     elif is_external and is_external.lower() in ("false", "0"):
         stmt = stmt.where(Person.is_external.is_(False))
         count_stmt = count_stmt.where(Person.is_external.is_(False))
+    else:
+        # Default: show only internal people unless explicitly filtering
+        stmt = stmt.where(Person.is_external.is_(False))
+        count_stmt = count_stmt.where(Person.is_external.is_(False))
 
     # Sorting
     sort_col = VALID_SORT_COLS.get(sort, Person.name)
@@ -105,7 +109,7 @@ async def people_directory(
     departments = list(dept_result.scalars().all())
 
     # Count needs-review
-    review_count_stmt = select(func.count()).select_from(Person).where(Person.needs_review.is_(True))
+    review_count_stmt = select(func.count()).select_from(Person).where(Person.needs_review.is_(True), Person.is_external.is_(False))
     review_count_result = await session.execute(review_count_stmt)
     review_count = review_count_result.scalar_one()
 
@@ -143,12 +147,17 @@ async def people_review(
     """HTMX partial: needs-review queue."""
     stmt = (
         select(Person)
-        .where(Person.needs_review.is_(True))
+        .where(Person.needs_review.is_(True), Person.is_external.is_(False))
         .options(joinedload(Person.department))
         .order_by(Person.last_seen.desc())
     )
     result = await session.execute(stmt)
     people = list(result.scalars().unique().all())
+
+    # Get departments for dropdown
+    dept_stmt = select(Department).order_by(Department.name)
+    dept_result = await session.execute(dept_stmt)
+    departments = list(dept_result.scalars().all())
 
     tz = _local_tz()
 
@@ -157,6 +166,7 @@ async def people_review(
         "components/people_review.html",
         {
             "people": people,
+            "departments": departments,
             "tz": tz,
         },
     )
@@ -188,8 +198,8 @@ async def approve_person(
     await session.commit()
 
     return HTMLResponse(
-        f'<div id="review-card-{person_id}" class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">'
-        f"Approved: {person.name}</div>"
+        f'<tr id="review-row-{person_id}" class="bg-green-50">'
+        f'<td colspan="7" class="px-4 py-3 text-sm text-green-700">Approved: {person.name}</td></tr>'
     )
 
 
@@ -209,8 +219,8 @@ async def dismiss_person(
     await session.commit()
 
     return HTMLResponse(
-        f'<div id="review-card-{person_id}" class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">'
-        f"Dismissed</div>"
+        f'<tr id="review-row-{person_id}" class="bg-gray-50">'
+        f'<td colspan="7" class="px-4 py-3 text-sm text-gray-400">Dismissed</td></tr>'
     )
 
 
@@ -269,6 +279,6 @@ async def edit_person(
     await session.commit()
 
     return HTMLResponse(
-        f'<div id="review-card-{person_id}" class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">'
-        f"Updated: {person.name}</div>"
+        f'<tr id="review-row-{person_id}" class="bg-green-50">'
+        f'<td colspan="7" class="px-4 py-3 text-sm text-green-700">Updated: {person.name}</td></tr>'
     )

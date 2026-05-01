@@ -31,11 +31,14 @@ EXTRACTION_MODEL = "claude-haiku-4-5-20251001"
 
 class ExtractedEmailAsk(BaseModel):
     description: str
-    ask_type: str  # deliverable/decision/follow_up/question/approval/review/info_request
+    ask_type: str  # deliverable/follow_up/question/approval/review/info_request (NOT decision)
     requester_name: str
     target_name: str
     deadline: str | None = None
     urgency: str = "medium"  # high/medium/low
+    creates_pending_decision: bool = False  # true for approval-type asks
+    decision_description: str | None = None  # description of the pending decision
+    decision_pending_owner_name: str | None = None  # who needs to approve
 
 
 class ExtractedPerson(BaseModel):
@@ -79,9 +82,12 @@ Given an email with sender, recipients, subject, and body, extract ALL of the fo
 4. **asks**: Every ask/request in the email. CRITICAL: identify the REQUESTER (who is asking) and the TARGET (who must act).
    - If the sender says "Can you send me the report?" → requester is the sender, target is the recipient.
    - If the sender says "I need John to review this" → requester is the sender, target is "John".
-   - Each ask needs: description, ask_type (deliverable/decision/follow_up/question/approval/review/info_request), requester_name, target_name, deadline (if mentioned), urgency (high/medium/low).
+   - Each ask needs: description, ask_type, requester_name, target_name, deadline (if mentioned), urgency (high/medium/low).
+   - Valid ask_type values: deliverable, follow_up, question, approval, review, info_request.
+     Do NOT use 'decision' as an ask_type. Use 'approval' for approval requests.
+   - If ask_type is 'approval', also set creates_pending_decision=true, decision_description (what needs to be approved), and decision_pending_owner_name (the person being asked to approve).
 5. **people**: Every person mentioned or involved. Include name, role (if mentioned), email (if known).
-6. **decisions_made**: Any decisions announced in this email.
+6. **decisions_made**: Any decisions announced in this email (already resolved).
 7. **commitments**: Promises made (e.g., "I'll send it by Thursday").
 8. **topics**: 2-5 topic keywords.
 9. **sentiment**: Overall tone — one of: positive, neutral, tense, negative, urgent.
@@ -102,7 +108,7 @@ Return ONLY valid JSON matching this exact schema (no markdown, no code blocks):
   "summary": "string",
   "intent": "request|fyi|decision_needed|follow_up|question|response|scheduling",
   "requires_response": true/false,
-  "asks": [{{"description": "string", "ask_type": "string", "requester_name": "string", "target_name": "string", "deadline": "string or null", "urgency": "high|medium|low"}}],
+  "asks": [{{"description": "string", "ask_type": "deliverable|follow_up|question|approval|review|info_request", "requester_name": "string", "target_name": "string", "deadline": "string or null", "urgency": "high|medium|low", "creates_pending_decision": false, "decision_description": "string or null", "decision_pending_owner_name": "string or null"}}],
   "people": [{{"name": "string", "role": "string or null", "email": "string or null"}}],
   "decisions_made": [{{"description": "string", "decided_by": "string"}}],
   "commitments": [{{"description": "string", "committer": "string", "recipient": "string or null", "deadline": "string or null"}}],
@@ -250,7 +256,7 @@ async def store_email_extraction(
     resolved_people: dict[str, int] = extraction.get("_resolved_people", {})
 
     # ── Email Asks ──────────────────────────────────────────
-    VALID_ASK_TYPES = {"deliverable", "decision", "follow_up", "question", "approval", "review", "info_request"}
+    VALID_ASK_TYPES = {"deliverable", "follow_up", "question", "approval", "review", "info_request"}
 
     for ask in parsed.asks:
         requester_id = resolved_people.get(ask.requester_name)
@@ -258,6 +264,8 @@ async def store_email_extraction(
 
         # Validate ask_type — map invalid LLM values to closest valid type
         ask_type = ask.ask_type
+        if ask_type == "decision":
+            ask_type = "approval"  # 'decision' ask_type is removed; use 'approval'
         if ask_type not in VALID_ASK_TYPES:
             ask_type = {"scheduling": "follow_up", "action": "deliverable", "update": "info_request", "request": "deliverable"}.get(ask_type, "info_request")
 
@@ -275,8 +283,23 @@ async def store_email_extraction(
             embedding=embedding,
         )
         session.add(email_ask)
+        await session.flush()  # get email_ask.id for linking
 
-    # ── Decisions ───────────────────────────────────────────
+        # Create linked pending decision for approval asks
+        if ask.creates_pending_decision and ask.decision_description:
+            pending_owner_id = resolved_people.get(ask.decision_pending_owner_name) if ask.decision_pending_owner_name else target_id
+            dec_embedding = await embed_text(ask.decision_description)
+            decision = Decision(
+                description=ask.decision_description,
+                status="pending",
+                pending_owner_id=pending_owner_id,
+                source_email_id=email_id,
+                source_ask_id=email_ask.id,
+                embedding=dec_embedding,
+            )
+            session.add(decision)
+
+    # ── Decisions (announced in the email, already resolved) ──
     for dec in parsed.decisions_made:
         decided_by_id = resolved_people.get(dec.decided_by)
         embedding = await embed_text(dec.description)
@@ -284,6 +307,8 @@ async def store_email_extraction(
             session,
             description=dec.description,
             decided_by=decided_by_id,
+            status="resolved",
+            outcome=dec.description,
             source_email_id=email_id,
             embedding=embedding,
         )

@@ -357,6 +357,7 @@ class ActionItem(Base):
     source_meeting_id: Mapped[int | None] = mapped_column(ForeignKey("meetings.id"))
     source_email_id: Mapped[int | None] = mapped_column(ForeignKey("emails.id"))
     source_chat_message_id: Mapped[int | None] = mapped_column(ForeignKey("chat_messages.id", use_alter=True))
+    related_decision_id: Mapped[int | None] = mapped_column(ForeignKey("decisions.id"))
     deadline: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(String, default="open")
     created: Mapped[datetime] = mapped_column(TSTZ, server_default="now()")
@@ -395,7 +396,7 @@ class EmailAsk(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "ask_type IN ('deliverable','decision','follow_up','question',"
+            "ask_type IN ('deliverable','follow_up','question',"
             "'approval','review','info_request')",
             name="ck_email_asks_type",
         ),
@@ -513,7 +514,7 @@ class ChatAsk(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "ask_type IN ('deliverable','decision','follow_up','question',"
+            "ask_type IN ('deliverable','follow_up','question',"
             "'approval','review','info_request')",
             name="ck_chat_asks_type",
         ),
@@ -537,10 +538,24 @@ class Decision(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("people.id"))
+    pending_owner_id: Mapped[int | None] = mapped_column(ForeignKey("people.id"))
     source_meeting_id: Mapped[int | None] = mapped_column(ForeignKey("meetings.id"))
     source_email_id: Mapped[int | None] = mapped_column(ForeignKey("emails.id"))
+    source_ask_id: Mapped[int | None] = mapped_column(ForeignKey("email_asks.id"))
+    status: Mapped[str | None] = mapped_column(String, default="pending")
+    outcome: Mapped[str | None] = mapped_column(Text)
+    resolved_at: Mapped[datetime | None] = mapped_column(TSTZ)
     datetime_: Mapped[datetime] = mapped_column("datetime", TSTZ, server_default="now()")
     embedding = mapped_column(Vector(1536))
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','resolved')", name="ck_decisions_status"
+        ),
+        Index("idx_decisions_pending_owner", "pending_owner_id"),
+        Index("idx_decisions_source_ask", "source_ask_id"),
+        Index("idx_decisions_status", "status"),
+    )
 
 
 class Commitment(Base):
