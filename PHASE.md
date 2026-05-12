@@ -144,8 +144,8 @@ Bundle rebuilt + reinstalled at `/Applications/Helios.app`. Daemon running (port
 - [ ] Voice note duration cap (set `voice_note.max_duration_seconds = 30`):
   - Cap warning notification fires at 0:00 remaining
   - Force-stop fires at hard cap
-- [ ] Save window auto-save: record quick note → wait 10s → auto-save fires + Aegis row created
-- [ ] Save window cancellation: trigger voice note, stop, click Discard → no Aegis row created
+- [x] Save window auto-save: record quick note → wait 10s → auto-save fires + Aegis row created (verified 2026-05-12 — Aegis voice_notes id=4, helios session 44, after NSTimer block-API fix)
+- [x] Save window cancellation: trigger voice note, stop, click Discard → no Aegis row created (verified 2026-05-12 — Helios session 41 ended cleanly, Aegis voice_notes count unchanged)
 
 **Known limitations** (acceptable for sign-off):
 - 4H.2 manual attachment picker NSPanel not built — only data plumbing
@@ -156,7 +156,7 @@ Bundle rebuilt + reinstalled at `/Applications/Helios.app`. Daemon running (port
 | Cycle | Triggered by | Critical | Warnings | Resolved at |
 |---|---|---|---|---|
 | 1 | Wave 3 review (2026-05-07) | 5 fixed | 4 fixed (6-9), 1 deferred (manual picker NSPanel) | 2026-05-07 |
-| 2 | §12.5 smoke run (2026-05-12) | 4 fixed — see below | 0 | 2026-05-12 |
+| 2 | §12.5 smoke run (2026-05-12) | 5 fixed — see below | 0 | 2026-05-12 |
 
 ### Cycle 2 — §12.5 smoke fixes (2026-05-12)
 
@@ -168,3 +168,5 @@ Triggered when the menu-bar voice-note path crashed mid-smoke. Root causes were 
 - **`helios/menubar/client.py`** — `post_voice_note_stop` used the 5s default timeout, but the daemon's sync transcription on the final partial chunk legitimately takes 10–30s. Fix: per-call `timeout=60.0` and a `timeout` kwarg on `_request`.
 
 Also bumped `[transcription] model_load_timeout_seconds = 90` in `~/.aegis/capture.toml` (default 30s was too tight on cold loads after a fresh bundle).
+
+- **`helios/menubar/voice_note_save_window.py`** — auto-save countdown's NSTimer used `self` (a plain Python object) as the target, but NSTimer needs an NSObject. Same pattern as the original Save/Discard button bug — selector dispatch silently no-ops, so the countdown never ticked and the window stayed open indefinitely. Fix: use `scheduledTimerWithTimeInterval_repeats_block_` (macOS 10.12+), which PyObjC bridges Python closures into directly. Bumped `permission_check_minutes` in `~/.aegis/capture.toml` from 5 → 1 so the daemon picks up newly-granted permissions faster after each rebuild's TCC reset.
