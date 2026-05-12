@@ -325,6 +325,13 @@ class HeliosApp(rumps.App):
         self._last_status: DaemonStatus | None = None
         self._last_state: str | None = None
         self._voice_note_active: bool = False
+        # ``True`` while the user-initiated stop path
+        # (``_trigger_voice_note_stop``) is in flight or has just
+        # completed. Used by ``_poll`` to distinguish a user stop from
+        # a force-stop on the active→null transition: only the
+        # force-stop case should kick off a fresh stop+save-window
+        # fetch, since the user-stop path already owns that work.
+        self._voice_note_stop_handled_by_user: bool = False
 
         # Lifecycle handles for the indicator + save window.
         self._indicator: VoiceNoteIndicator | None = None
@@ -472,8 +479,23 @@ class HeliosApp(rumps.App):
 
         new_state = derive_state(status, voice_note_active)
         prev_state = self._last_state
+        prev_voice_note_active = self._voice_note_active
         self._last_status = status
         self._voice_note_active = voice_note_active
+
+        # Voice-note ended without the user clicking Stop (cap-timer
+        # force-stop, external cancel, daemon restart, etc.). Trigger
+        # the same stop+save-window worker so the user can still review
+        # the transcript: the daemon's /v1/voice-note/stop endpoint
+        # accepts post-force-stop calls and returns the buffered
+        # transcript built from the chunks the scheduler had already
+        # captured.
+        if prev_voice_note_active and not voice_note_active:
+            if self._voice_note_stop_handled_by_user:
+                self._voice_note_stop_handled_by_user = False
+            else:
+                _log.info("voice_note_ended_externally_dispatching_save_window")
+                self._trigger_voice_note_stop()
 
         # Indicator lifecycle — driven by the voice-note state.
         if new_state == STATE_RECORDING_VOICE_NOTE and self._indicator is None:
@@ -931,7 +953,13 @@ class HeliosApp(rumps.App):
         window is an NSWindow — construction MUST happen on the main
         thread or AppKit silently no-ops it (cycle 3 fix; user reported
         the save window never appeared after the stop button worked).
+
+        Sets ``_voice_note_stop_handled_by_user`` so the next
+        active→null transition in ``_poll`` doesn't double-trigger a
+        force-stop handler.
         """
+        self._voice_note_stop_handled_by_user = True
+
         def _worker() -> None:
             try:
                 resp = self._client.post_voice_note_stop()

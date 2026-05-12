@@ -146,30 +146,44 @@ def _now(request: Request) -> float:
     return request.app.state.clock.time()
 
 
-def _active(request: Request) -> dict[str, Any] | None:
-    """Return the active voice-note state, auto-clearing if stale.
+def _get_state(request: Request) -> dict[str, Any] | None:
+    """Raw voice-note state — does NOT consult the orchestrator.
 
-    ``voice_note_active`` is set by ``/voice-note/start`` and cleared by
-    ``/voice-note/stop``. The scheduler's cap-timer force-stop path
-    (``Scheduler._on_voice_note_force_stop``) bypasses the stop
-    endpoint, so the orchestrator's active session can disappear while
-    this dict still says a voice note is in flight. The indicator polls
-    ``/v1/voice-note/active`` every 250ms and only dismisses when
-    ``active=null``; without this cross-check it never sees null after
-    a force-stop and the floating window stays on screen indefinitely.
-
-    Excerpt mode stores the parent session's id as ``session_id``, so
-    a single ``orch.active_session_id == state["session_id"]`` check
-    covers both standalone and excerpt voice notes.
+    ``/voice-note/stop`` reads via this helper because it needs to keep
+    serving requests even after the scheduler's force-stop path has
+    cleared the orchestrator's active session: that's the only way the
+    menu bar can fetch the transcript + ids for a force-stopped note
+    and open the save window.
     """
-    state = getattr(request.app.state, "voice_note_active", None)
-    if state is None:
-        return None
+    return getattr(request.app.state, "voice_note_active", None)
+
+
+def _orchestrator_owns(request: Request, state: dict[str, Any]) -> bool:
+    """True if the orchestrator still considers the voice-note session active.
+
+    False means a force-stop happened (cap-timer fired the scheduler's
+    ``_on_voice_note_force_stop`` which called ``stop_session``). Excerpt
+    mode stores the parent session id as ``session_id``, so a single
+    equality check covers both standalone and excerpt voice notes.
+    """
     orch = getattr(request.app.state, "orchestrator", None)
     if orch is None:
-        return state
-    if orch.active_session_id != state["session_id"]:
-        request.app.state.voice_note_active = None
+        return True
+    return orch.active_session_id == state["session_id"]
+
+
+def _active(request: Request) -> dict[str, Any] | None:
+    """Active state for ``/voice-note/active`` polling.
+
+    Returns ``None`` when the orchestrator no longer owns the session
+    (force-stopped) so the floating indicator dismisses on its next
+    250ms poll. Does NOT mutate ``app.state.voice_note_active`` — the
+    raw state is preserved for ``/voice-note/stop`` to consume.
+    """
+    state = _get_state(request)
+    if state is None:
+        return None
+    if not _orchestrator_owns(request, state):
         return None
     return state
 
@@ -337,7 +351,11 @@ async def voice_note_stop(request: Request) -> VoiceNoteStopResponse:
     some of them; ``transcribe_synchronously`` reuses those segments
     instead of re-running the model.
     """
-    state = _active(request)
+    # Read the raw state — we want this endpoint to keep working even
+    # after the scheduler's force-stop has cleared the orchestrator's
+    # active session, so the menu bar can fetch the transcript + ids
+    # for a force-stopped note and open the save window.
+    state = _get_state(request)
     if state is None:
         raise _err(
             status.HTTP_404_NOT_FOUND,
@@ -356,8 +374,9 @@ async def voice_note_stop(request: Request) -> VoiceNoteStopResponse:
     voice_note_id: int = state["voice_note_id"]
     is_excerpt: bool = state["is_excerpt"]
     started_at: float = state["started_at"]
+    already_force_stopped = not _orchestrator_owns(request, state)
 
-    if not is_excerpt:
+    if not is_excerpt and not already_force_stopped:
         # Cancel the cap timers — successful stop, not a force-stop.
         try:
             await scheduler.cancel_voice_note_caps(session_id)
@@ -384,6 +403,16 @@ async def voice_note_stop(request: Request) -> VoiceNoteStopResponse:
                 session_id=session_id,
                 error=str(exc),
             )
+    elif already_force_stopped:
+        # Force-stop already ran (cap timer in scheduler). Cap timers
+        # and notify_session_stopped were handled there; the chunk row
+        # already has ``ended_at`` set. We only need to build the
+        # response from existing data.
+        log.info(
+            "voice_note_stop_after_force_stop",
+            session_id=session_id,
+            voice_note_id=voice_note_id,
+        )
 
     # Pull authoritative ended_at when we own the row.
     ended_at = _now(request)

@@ -452,11 +452,13 @@ async def test_voice_note_active_not_approaching_when_fresh(replay_env):
             await client.post("/v1/voice-note/stop", headers=_AUTH)
 
 
-async def test_voice_note_active_clears_after_orchestrator_force_stop(replay_env):
+async def test_voice_note_active_null_after_orchestrator_force_stop(replay_env):
     """After a scheduler force-stop the orchestrator's active session is
-    cleared but ``app.state.voice_note_active`` is not. The /active
-    endpoint must auto-clean and return ``active=null`` so the floating
-    indicator dismisses (regression for §12.5 cycle-2 follow-up).
+    cleared but ``app.state.voice_note_active`` is preserved so the
+    ``/voice-note/stop`` endpoint can still serve the menu bar a
+    transcript response. Meanwhile ``/v1/voice-note/active`` must
+    report ``null`` so the floating indicator dismisses on its next
+    250ms poll.
     """
     app = create_app()
     async with _LifespanContext(app):
@@ -483,7 +485,44 @@ async def test_voice_note_active_clears_after_orchestrator_force_stop(replay_env
                 reason="voice_note_cap_reached",
             )
 
+            # /active reports null (indicator dismisses) ...
             resp = await client.get("/v1/voice-note/active", headers=_AUTH)
             assert resp.status_code == 200, resp.text
             assert resp.json()["active"] is None
+
+            # ... but the raw state is still in app.state so /stop can
+            # build a response from it on the post-force-stop call.
+            assert app.state.voice_note_active is not None
+
+
+async def test_voice_note_stop_after_force_stop_returns_response(replay_env):
+    """``/voice-note/stop`` accepts a call after a scheduler force-stop
+    and returns a normal ``VoiceNoteStopResponse`` so the menu bar can
+    show the save window even when the user never clicked Stop.
+    """
+    app = create_app()
+    async with _LifespanContext(app):
+        await _grant_mic(app)
+        await _force_transcription_ready(app)
+        async with await _client(app) as client:
+            r1 = await client.post(
+                "/v1/voice-note/start",
+                json={"triggered_by": "menu_bar"},
+                headers=_AUTH,
+            )
+            assert r1.status_code == 200
+            start_body = r1.json()
+
+            # Force-stop via orchestrator.
+            await app.state.orchestrator.stop_session(
+                app.state.voice_note_active["session_id"],
+                reason="voice_note_cap_reached",
+            )
+
+            r2 = await client.post("/v1/voice-note/stop", headers=_AUTH)
+            assert r2.status_code == 200, r2.text
+            body = r2.json()
+            assert body["voice_note_id"] == start_body["voice_note_id"]
+            assert body["session_id"] == start_body["session_id"]
+            # State cleared after the (idempotent) stop response.
             assert app.state.voice_note_active is None
