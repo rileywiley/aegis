@@ -125,7 +125,7 @@ Bundle rebuilt + reinstalled at `/Applications/Helios.app`. Daemon running (port
 **Must verify** (per HELIOS_BUILD_PLAN.md lines 2561-2604):
 - [ ] Menu bar icon visible in macOS menu bar (look near system icons)
 - [ ] All 6 icon states reachable: not_running, armed, recording, recording_voice_note, paused, error
-- [ ] Onboarding window: launch with `rm ~/.aegis/capture/onboarding_state.json` then click "Re-run Onboarding" from menu (or kill + relaunch the menu bar process)
+- [x] Onboarding window: launch with `rm ~/.aegis/capture/onboarding_state.json` then click "Re-run Onboarding" from menu (or kill + relaunch the menu bar process) — verified end-to-end 2026-05-13 after cycle-3 fixes (NSTimer block-API permission poller, progress widget moved out of dead code, main-thread dispatch for download callbacks, ImportError-tolerant verification step, non-JSON line tolerance, subprocess PYTHONPATH inheritance). State file lands with `complete: true, mic_granted: true, screen_granted: true, model_downloaded: true, login_items_acknowledged: true`.
   - Walk through welcome → mic → screen → restart → model → login items → complete
   - Each step has real labels + buttons (built in Wave 4 cycle 1)
 - [ ] 4-hour prompt notification (HIGHEST RISK feature):
@@ -133,8 +133,7 @@ Bundle rebuilt + reinstalled at `/Applications/Helios.app`. Daemon running (port
   - Start continuous capture
   - Wait ~70s for notification banner with Continue / Stop buttons
   - Verify each button's behavior
-- [ ] Permission revocation: revoke mic in System Settings during active session
-  - Within 30s, notification fires + icon flips to error + capture ends
+- [~] Permission revocation: revoke mic in System Settings during active session — DEFERRED 2026-05-13. State-machine logic verified working (tccutil-reset path triggers revocation+restoration correctly, see workers/permissions.py tests). What doesn't work: detecting the System Settings toggle in the LaunchAgent daemon, because `AVCaptureDevice.authorizationStatusForMediaType_` caches per-process and macOS's "Quit & Reopen" only restarts the menu bar, not the daemon. Tracked as a follow-up — likely fix is to flag permission_revoked from N consecutive chunk_no_audio mic events.
 - [ ] Quit Menu Bar leaves daemon running (`curl http://127.0.0.1:3031/v1/health` from another terminal)
 - [ ] Stop Helios Daemon shows confirmation NSAlert, then unloads — health check fails afterward
 - [x] Voice note from menu bar: click "Record Voice Note" → indicator window appears with timer + audio level → click stop → save window appears with transcript (verified 2026-05-12 — Aegis voice_notes id=3, helios session 40)
@@ -155,6 +154,7 @@ Bundle rebuilt + reinstalled at `/Applications/Helios.app`. Daemon running (port
 |---|---|---|---|---|
 | 1 | Wave 3 review (2026-05-07) | 5 fixed | 4 fixed (6-9), 1 deferred (manual picker NSPanel) | 2026-05-07 |
 | 2 | §12.5 smoke run (2026-05-12) | 7 fixed — see below | 0 | 2026-05-12 |
+| 3 | §12.5 smoke run (2026-05-13) onboarding | 4 fixed — see below | 0 | 2026-05-13 |
 
 ### Cycle 2 — §12.5 smoke fixes (2026-05-12)
 
@@ -170,3 +170,11 @@ Also bumped `[transcription] model_load_timeout_seconds = 90` in `~/.aegis/captu
 - **`helios/menubar/voice_note_save_window.py`** — auto-save countdown's NSTimer used `self` (a plain Python object) as the target, but NSTimer needs an NSObject. Same pattern as the original Save/Discard button bug — selector dispatch silently no-ops, so the countdown never ticked and the window stayed open indefinitely. Fix: use `scheduledTimerWithTimeInterval_repeats_block_` (macOS 10.12+), which PyObjC bridges Python closures into directly. Bumped `permission_check_minutes` in `~/.aegis/capture.toml` from 5 → 1 so the daemon picks up newly-granted permissions faster after each rebuild's TCC reset.
 - **`helios/api/routes/voice_note.py`** — after a scheduler force-stop the orchestrator's active session was cleared but `app.state.voice_note_active` was not (the stop endpoint is what clears it, and force-stop bypasses the endpoint). `/v1/voice-note/active` kept returning the stale dict, so the floating indicator never saw `active=null` and stayed on screen. Refactor: `_get_state` returns raw state without consulting the orchestrator; `_orchestrator_owns` helper detects force-stop; `_active` is now `/voice-note/active`-only (returns None when not owned, leaves state intact); `/voice-note/stop` reads via `_get_state` and tolerates force-stopped sessions (skips the orch.stop_session call, builds response from existing chunks). +2 endpoint tests.
 - **`helios/menubar/app.py`** — `_poll` detects RECORDING_VOICE_NOTE→ARMED transitions that weren't user-initiated (cap-timer force-stop, external cancel) and dispatches the same `_trigger_voice_note_stop` worker the Stop button uses. The worker hits `/v1/voice-note/stop` (which now serves post-force-stop calls) and opens the save window. Guarded by `_voice_note_stop_handled_by_user` flag so the explicit user-stop path doesn't double-fire.
+
+### Cycle 3 — Onboarding (2026-05-13)
+
+Onboarding wizard ran end-to-end after these fixes; previously stuck on permission "checking..." labels and an invisible model-download step.
+
+- **`helios/menubar/model_download.py`** — bundled subprocess inherits `sys.path` via a `PYTHONPATH` env var so `python -m helios.scripts.download_whisper` resolves (py2app's bootstrap doesn't run for the child). Also: non-JSON lines on subprocess stdout (e.g. `RequestsDependencyWarning` text from `import requests`) are now skipped instead of treated as fatal `parse_error`. +1 regression test (`test_non_json_lines_are_tolerated`).
+- **`helios/scripts/download_whisper.py`** — verification probe (`whisperx.load_model` + tiny transcribe) treats `ImportError` / `ModuleNotFoundError` raised from inside a successfully-imported whisperx as a warning, not a hard error. The bundled subprocess sees `typing_extensions` as missing because py2app ships only the dist-info; the daemon itself (running under py2app's bootstrap) has the package available. Files-on-disk verdict is enough.
+- **`helios/menubar/onboarding.py`** — three independent fixes: (1) the `NSProgressIndicator` and progress-status label were dead code inside `_build_objc_button_target` after a `return None` — moved to `_populate_step_view` so the model step actually has a visible progress widget; (2) added an `NSTimer`-block-based 500 ms permission poll (`_start_status_poll` / `_stop_status_poll`) wired up in `_render_current_step` and torn down in `close()`, so the mic / screen "Status: checking..." labels flip to ✓ within half a second of the OS grant and auto-advance; (3) `_dispatch_to_main_thread` helper wraps the `ModelDownloader` callbacks so AppKit writes don't race the read-loop thread. +9 regression tests covering progress widget construction, formatter, mic/screen poll auto-advance, main-thread dispatch, and timer teardown on close.
