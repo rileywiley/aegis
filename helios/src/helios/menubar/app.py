@@ -332,6 +332,11 @@ class HeliosApp(rumps.App):
         # force-stop case should kick off a fresh stop+save-window
         # fetch, since the user-stop path already owns that work.
         self._voice_note_stop_handled_by_user: bool = False
+        # Tracks the session id we've already posted a FOUR_HOUR_PROMPT
+        # banner for. ``last_error == "4hr_prompt_pending"`` stays set
+        # in /v1/status until the user responds; without this dedup the
+        # menu bar would re-post the notification every poll tick.
+        self._4hr_prompt_posted_for_session: int | None = None
 
         # Lifecycle handles for the indicator + save window.
         self._indicator: VoiceNoteIndicator | None = None
@@ -496,6 +501,44 @@ class HeliosApp(rumps.App):
             else:
                 _log.info("voice_note_ended_externally_dispatching_save_window")
                 self._trigger_voice_note_stop()
+
+        # 4-hour continuous prompt — the daemon scheduler flips
+        # ``last_error`` to ``"4hr_prompt_pending"`` when the prompt
+        # fires (see scheduler._maybe_fire_4hr_prompt). The daemon
+        # process itself can't post a UNUserNotificationCenter banner
+        # reliably from a LaunchAgent context (notification
+        # authorization sticks at ``notDetermined``), so the menu bar
+        # — which DID request authorization at startup — posts the
+        # Continue/Stop banner here. Dedup by session id so we only
+        # surface one banner per fire even though the daemon keeps
+        # ``last_error`` set until the user responds.
+        active_sid: int | None = None
+        if status is not None and status.active_session is not None:
+            active_sid = status.active_session.id
+        prompt_pending = (
+            status is not None
+            and status.last_error == "4hr_prompt_pending"
+            and active_sid is not None
+        )
+        if prompt_pending:
+            if self._4hr_prompt_posted_for_session != active_sid:
+                self._4hr_prompt_posted_for_session = active_sid
+                try:
+                    self._notifier.post(
+                        category="FOUR_HOUR_PROMPT",
+                        title="Continue capturing?",
+                        body="Helios has been recording for a while. Continue or stop?",
+                        identifier=f"four_hour_prompt_{active_sid}",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "four_hour_prompt_post_failed",
+                        error_type=type(exc).__name__,
+                    )
+        else:
+            # Daemon cleared the pending state (user responded or
+            # session ended) — reset dedup so the next fire can post.
+            self._4hr_prompt_posted_for_session = None
 
         # Indicator lifecycle — driven by the voice-note state.
         if new_state == STATE_RECORDING_VOICE_NOTE and self._indicator is None:

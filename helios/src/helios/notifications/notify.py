@@ -55,6 +55,36 @@ def _load_user_notifications():
     return UserNotifications
 
 
+# Tests inject a fake ``UserNotifications`` module into ``sys.modules``
+# and need the bundle gate to short-circuit to True so the rest of the
+# code under test runs. Flipping this module-level flag is the seam.
+_FAKE_BUNDLE_FOR_TESTS = False
+
+
+def _in_app_bundle() -> bool:
+    """Return True iff we're running inside a real macOS app bundle.
+
+    ``UNUserNotificationCenter.currentNotificationCenter()`` aborts the
+    process with an uncatchable ``NSException`` ("must be called from a
+    bundle") when invoked from a non-bundle context — e.g. a pytest
+    runner under the dev venv. The exception escapes Python's
+    try/except because it's raised at the C++/Objective-C runtime
+    level. Gate every UN call on this check so the notifier degrades
+    cleanly outside the bundle instead of crashing the test process.
+    """
+    if _FAKE_BUNDLE_FOR_TESTS:
+        return True
+    try:
+        from Foundation import NSBundle  # type: ignore[import-not-found]
+    except Exception:  # noqa: BLE001 — non-mac / no PyObjC
+        return False
+    try:
+        bundle_id = NSBundle.mainBundle().bundleIdentifier()
+    except Exception:  # noqa: BLE001
+        return False
+    return bundle_id == "com.aegis.helios"
+
+
 class DaemonNotifier:
     """Daemon-side fallback notifier.
 
@@ -88,6 +118,10 @@ class DaemonNotifier:
         if self._authorization_requested:
             return
         self._authorization_requested = True
+        if not _in_app_bundle():
+            # Outside the bundle (pytest, REPL) the UN call aborts with
+            # an uncatchable NSException. Skip cleanly.
+            return
         try:
             un = _load_user_notifications()
         except ImportError:
@@ -146,6 +180,8 @@ class DaemonNotifier:
         rather than raising — the caller should always be able to fall
         through.
         """
+        if not _in_app_bundle():
+            return False
         try:
             un = _load_user_notifications()
         except ImportError as exc:
@@ -207,6 +243,12 @@ class DaemonNotifier:
         ``title`` and ``body`` are NEVER logged.
         """
         ident = identifier if identifier is not None else str(uuid.uuid4())
+
+        if not _in_app_bundle():
+            _log.debug(
+                "notification_skipped_no_bundle", identifier=ident
+            )
+            return False
 
         # First post in this process: tell the OS we want to post so
         # ``getNotificationSettings`` flips out of ``notDetermined``.

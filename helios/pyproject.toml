@@ -1,0 +1,73 @@
+[project]
+name = "helios"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "aiosqlite>=0.19",
+    "httpx>=0.28",
+    "watchfiles>=0.21",
+    "structlog>=24.1",
+    "rumps>=0.4",
+    "pyobjc-core>=10.1",
+    "pyobjc-framework-AVFoundation>=10.1",
+    "pyobjc-framework-Carbon>=10.1",
+    "pyobjc-framework-Cocoa>=10.1",
+    "pyobjc-framework-Quartz>=10.1",
+    # UNUserNotificationCenter — drives action-button notifications
+    # (FOUR_HOUR_PROMPT, VOICE_NOTE_CAP_WARNING, etc.). Without this
+    # ``import UserNotifications`` raises ModuleNotFoundError and the
+    # menubar's MenubarNotifier silently early-returns from
+    # register_categories(), so banners with Continue/Stop buttons
+    # never fire. (See PHASE.md cycle 3 follow-up.)
+    "pyobjc-framework-UserNotifications>=10.1",
+    "sounddevice>=0.4",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "imagehash>=4.3",
+    "pillow>=10.2",
+    "keyring>=24.3",
+    "huggingface-hub>=0.36",
+    "shared",
+]
+
+[tool.uv.sources]
+shared = { path = "../shared", editable = true }
+
+[project.optional-dependencies]
+transcription = [
+    "whisperx>=3.1",
+    "torch>=2.1",
+    "torchaudio>=2.1",
+    # pyannote.audio 3.x calls torchaudio.list_audio_backends() on import,
+    # which torchaudio 2.6+ renamed to list_backends(). Pinning to 4.x
+    # which uses the modern torchaudio API. Compatible with torchaudio
+    # 2.6+ wheels (including Python 3.14 builds).
+    "pyannote.audio>=4.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.8",
+]
+build = [
+    "py2app>=0.28",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

@@ -640,6 +640,12 @@ class Scheduler:
             cont.timeout_handle = None
         if cont.pending_response_event is not None:
             cont.pending_response_event.set()
+        # Clear ``last_error="4hr_prompt_pending"`` set in
+        # ``_maybe_fire_4hr_prompt`` so the menu bar's transition
+        # detector sees pending→cleared→pending across consecutive
+        # prompts and posts a fresh banner each time. Without this
+        # the menu bar's dedup keeps the second prompt silent.
+        await self._sm.transition(last_error=None)
         if continue_session:
             now = self._clock.time()
             cont.next_prompt_at = (
@@ -1095,22 +1101,28 @@ class Scheduler:
     ) -> None:
         """Best-effort macOS banner for cap warning + force-stop.
 
-        Imported lazily so non-macOS test environments don't pull in
-        UserNotifications at module-load time. Any failure (no
-        UserNotifications framework, denied entitlement, post raised)
-        is swallowed with a log line — cap timers must keep firing
-        even if the notification path is broken.
+        Fire-and-forget: spawn ``notify(...)`` on a background task so
+        the cap chain (warning → ``_safe_stop`` for force-stop) doesn't
+        block waiting on the notification completion handler. In tests
+        the completion handler never fires, and a 5s ``wait_for`` in
+        ``DaemonNotifier.post`` would stall ``virtual_clock`` based
+        tests for 5 real seconds — long enough to mask ``_safe_stop``
+        from running before the test asserts.
         """
-        try:
-            from helios.notifications.notify import notify
 
-            await notify(title=title, body=body, identifier=identifier)
-        except Exception as exc:  # noqa: BLE001 — best-effort, never break the cap chain
-            _log.warning(
-                "voice_note_cap_notify_failed",
-                identifier=identifier,
-                error_type=type(exc).__name__,
-            )
+        async def _fire() -> None:
+            try:
+                from helios.notifications.notify import notify
+
+                await notify(title=title, body=body, identifier=identifier)
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                _log.warning(
+                    "voice_note_cap_notify_failed",
+                    identifier=identifier,
+                    error_type=type(exc).__name__,
+                )
+
+        self._spawn_task(_fire())
 
 
 __all__ = [
