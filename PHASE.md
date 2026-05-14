@@ -4,11 +4,12 @@ Persistent tracker for Phase 4 (Menu Bar, Onboarding, Permissions, Voice Note UX
 
 ## Status
 
-- Phase: 4 (Menu Bar, Onboarding, Permissions, Voice Note UX)
+- Phase: 4 (Menu Bar, Onboarding, Permissions, Voice Note UX) — **COMPLETE 2026-05-14**
 - Started: 2026-05-07
-- Current wave: 5 (User smoke + sign-off)
-- Bug-report cycle: 1 (resolved)
-- Smoke test (§12.5): pending
+- Closed: 2026-05-14 via `PHASE_4_CHECKPOINT.md`
+- Bug-report cycles: 4 (all resolved)
+- Smoke test (§12.5): **signed off** with 3 known limitations tracked as follow-ups
+- Next: Phase 5 (Screen OCR) — `HELIOS_BUILD_PLAN.md:1894`
 
 **Wave 1 result (2026-05-07):** 10 agents complete. 620 Helios tests pass (+208 new), 313 Aegis tests pass (+16 new).
 
