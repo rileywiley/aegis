@@ -61,6 +61,7 @@ from helios.state import DaemonStateMachine
 from helios.workers.cleanup import CleanupWorker
 from helios.workers.diarization import DiarizationWorker
 from helios.workers.merge import MergeWorker
+from helios.workers.ocr import OcrWorker, session_provider_from_db
 from helios.workers.permissions import PermissionChecker
 from helios.workers.transcription import TranscriptionWorker
 
@@ -200,6 +201,26 @@ async def lifespan(app: FastAPI):
             clock=clock,
         )
         await cleanup_worker.start()
+
+        # Phase 5 / Track 5A — per-session OCR worker. The orchestrator
+        # owns the lifecycle (start on ``start_session`` when the
+        # system source is live, stop on ``stop_session``); the
+        # factory just binds together the long-lived deps + the
+        # session-scoped source. Voice notes have no system source
+        # and naturally skip OCR.
+        def _ocr_worker_factory(session_id, system_source):
+            return OcrWorker(
+                db=pool.writer,
+                config=config,
+                clock=clock,
+                reporter=component_reporter,
+                video_source=system_source,
+                active_session_provider=lambda: session_provider_from_db(
+                    pool.writer
+                ),
+            )
+
+        orchestrator.set_ocr_worker_factory(_ocr_worker_factory)
 
         app.state.db_pool = pool
         app.state.config = config
