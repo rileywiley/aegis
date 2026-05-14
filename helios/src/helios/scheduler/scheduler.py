@@ -490,6 +490,33 @@ class Scheduler:
             pre_start_at=earliest_pt.group_start_ts - pre,
         )
 
+    def set_screen_capture_override(
+        self, session_id: int, until_ts: float
+    ) -> float | None:
+        """Update the in-memory ``ActiveSessionInfo.screen_capture_override_until``.
+
+        Used by ``POST /v1/capture/enable-screen-override`` (HELIOS_BUILD_PLAN
+        §5B / §12.6) so the next ``GET /v1/status.active_session`` reflects
+        the new override immediately — without waiting for a DB round-trip
+        on the read path.
+
+        Replace-with-latest semantics: the most recent call wins, even if
+        it shortens an existing override. The menu bar offers fixed
+        duration slots (e.g. 30 min) and the user expects the latest
+        click to be authoritative. Returns the stored ts on success;
+        ``None`` if the scheduler has no record of ``session_id``.
+        """
+        info = self._active_sessions.get(session_id)
+        if info is None:
+            return None
+        info.screen_capture_override_until = float(until_ts)
+        _log.info(
+            "screen_capture_override_set",
+            session_id=session_id,
+            until_ts=info.screen_capture_override_until,
+        )
+        return info.screen_capture_override_until
+
     async def notify_session_started(
         self, session_id: int, kind: SessionKind
     ) -> None:
