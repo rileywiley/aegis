@@ -656,6 +656,11 @@ Items:
                 assigned += 1
 
         await session.commit()
+        # Successful Anthropic call → clear any stale ``llm_api`` row
+        # so a previous transient error doesn't leave the dashboard
+        # banner stuck after recovery.
+        from aegis.processing.embeddings import _report_api_success
+        await _report_api_success("llm_api")
     except AnthropicRateLimitError as e:
         logger.error("Anthropic rate limit during workstream assignment: %s", e)
         from aegis.processing.embeddings import _report_api_error

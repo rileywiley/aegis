@@ -54,6 +54,7 @@ async def triage_batch(
 
     settings = get_settings()
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    any_success = False
 
     for i in range(0, len(items), CHUNK_SIZE):
         chunk = items[i : i + CHUNK_SIZE]
@@ -82,6 +83,7 @@ async def triage_batch(
 
             results = [TriageResult(**r) for r in results_raw]
             all_results.extend(results)
+            any_success = True
 
             # Track LLM usage
             await _track_usage(
@@ -92,6 +94,14 @@ async def triage_batch(
 
         except Exception:
             logger.exception("Triage batch chunk %d-%d failed", i, i + len(chunk))
+
+    # Triage runs every 30 minutes against every new email/chat batch,
+    # so it's the highest-frequency Anthropic caller. Use a successful
+    # triage as the heartbeat that flips ``llm_api`` healthy when a
+    # prior error has cleared.
+    if any_success:
+        from aegis.processing.embeddings import _report_api_success
+        await _report_api_success("llm_api")
 
     return all_results
 

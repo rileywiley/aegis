@@ -35,6 +35,7 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
     all_embeddings: list[list[float]] = []
     total_tokens = 0
 
+    success = False
     for i in range(0, len(texts), MAX_BATCH_SIZE):
         chunk = texts[i : i + MAX_BATCH_SIZE]
         # Truncate long texts to avoid token limits
@@ -48,6 +49,7 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
             for item in response.data:
                 all_embeddings.append(item.embedding)
             total_tokens += response.usage.total_tokens
+            success = True
         except RateLimitError as e:
             logger.error("OpenAI rate limit / quota exceeded: %s", e)
             await _report_api_error("embeddings", f"OpenAI rate limit: {e}")
@@ -60,6 +62,10 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
             logger.exception("Embedding batch failed for chunk %d-%d", i, i + len(chunk))
             all_embeddings.extend([[0.0] * EMBEDDING_DIM] * len(chunk))
 
+    # If any chunk succeeded, mark the embeddings service healthy so a
+    # transient earlier failure doesn't leave the dashboard banner stuck.
+    if success:
+        await _report_api_success("embeddings")
     return all_embeddings
 
 
@@ -78,6 +84,29 @@ async def _report_api_error(service: str, message: str) -> None:
             )
     except Exception:
         logger.debug("Failed to update system_health for %s", service, exc_info=True)
+
+
+async def _report_api_success(service: str) -> None:
+    """Mark an external API service healthy after a successful call.
+
+    The companion to ``_report_api_error``. Without this the
+    ``system_health`` row stayed at the last failure state forever —
+    once a key rotation / quota reset / network hiccup cleared, the
+    dashboard kept showing the stale "degraded" banner indefinitely.
+    """
+    try:
+        from aegis.db.engine import async_session_factory
+        from aegis.db.repositories import upsert_system_health
+        async with async_session_factory() as session:
+            await upsert_system_health(
+                session,
+                service,
+                status="healthy",
+                last_success=datetime.now(timezone.utc),
+                last_error_message=None,
+            )
+    except Exception:
+        logger.debug("Failed to mark %s healthy", service, exc_info=True)
 
 
 async def regenerate_missing_embeddings(session: AsyncSession) -> int:

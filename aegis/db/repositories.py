@@ -169,6 +169,14 @@ async def upsert_system_health(
     if items_processed is not None:
         data["items_processed_last_hour"] = items_processed
 
+    # Recovery semantics: when a service transitions back to healthy,
+    # explicitly clear the last_error_message so a stale "degraded"
+    # banner on the dashboard goes away. Without this the upsert's
+    # truthy check above skips the field and the previous error string
+    # stays in the row forever (the only writers were failure paths).
+    if status == "healthy" and "last_error_message" not in data:
+        data["last_error_message"] = None
+
     stmt = pg_insert(SystemHealth).values(**data)
     stmt = stmt.on_conflict_do_update(
         index_elements=["service"],
