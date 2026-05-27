@@ -1,0 +1,43 @@
+{# Transcription section. All restart-required. #}
+{% set tx = toml.get("transcription", {}) %}
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Model</span>
+    <select name="transcription.model"
+            class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      {% set current_model = tx.get('model', 'distil-large-v3') %}
+      {% for m in ['distil-large-v3', 'large-v3', 'medium', 'small', 'base'] %}
+      <option value="{{ m }}" {% if m == current_model %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <span class="text-xs text-gray-400">{{ field_label('transcription', 'model') }}</span>
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Language</span>
+    <input type="text"
+           name="transcription.language"
+           value="{{ tx.get('language', 'en') }}"
+           maxlength="5"
+           class="mt-1 w-full rounded-md border-gray-300 text-sm">
+    <span class="text-xs text-gray-400">{{ field_label('transcription', 'language') }}</span>
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Compute type</span>
+    <select name="transcription.compute_type"
+            class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      {% set ct = tx.get('compute_type', 'float16') %}
+      {% for c in ['float16', 'float32', 'int8'] %}
+      <option value="{{ c }}" {% if c == ct %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <span class="text-xs text-gray-400">{{ field_label('transcription', 'compute_type') }}</span>
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Model-load timeout (seconds)</span>
+    <input type="number" min="5" max="600"
+           name="transcription.model_load_timeout_seconds"
+           value="{{ tx.get('model_load_timeout_seconds', 30) }}"
+           class="mt-1 w-full rounded-md border-gray-300 text-sm">
+    <span class="text-xs text-gray-400">{{ field_label('transcription', 'model_load_timeout_seconds') }}</span>
+  </label>
+</div>

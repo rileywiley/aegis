@@ -30,7 +30,7 @@ def _build_sections():
             "Connections",
             "External service connection parameters (read-only).",
             [
-                ("screenpipe_url", "Screenpipe URL", "Screenpipe REST API endpoint", "readonly", settings.screenpipe_url),
+                ("helios_url", "Helios URL", "Helios capture daemon REST API endpoint", "readonly", settings.helios_url),
                 ("azure_client_id", "Azure Client ID", "Azure app registration client ID", "readonly", settings.azure_client_id),
                 ("azure_tenant_id", "Azure Tenant ID", "Azure AD tenant ID", "readonly", settings.azure_tenant_id),
             ],
@@ -42,7 +42,7 @@ def _build_sections():
                 ("polling_calendar_seconds", "Calendar Sync Interval", "Seconds between calendar sync runs", "number", settings.polling_calendar_seconds),
                 ("polling_email_seconds", "Email Poll Interval", "Seconds between email polling runs", "number", settings.polling_email_seconds),
                 ("polling_teams_seconds", "Teams Poll Interval", "Seconds between Teams polling runs", "number", settings.polling_teams_seconds),
-                ("polling_screenpipe_seconds", "Screenpipe Poll Interval", "Seconds between Screenpipe checks", "number", settings.polling_screenpipe_seconds),
+                ("helios_heartbeat_seconds", "Helios Heartbeat Interval", "Seconds between Helios /v1/health pings", "number", settings.helios_heartbeat_seconds),
             ],
         ),
         (

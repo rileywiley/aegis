@@ -1,0 +1,194 @@
+{% extends "helios/base.html" %}
+
+{% block title %}Helios — Diagnostics{% endblock %}
+{% block page_title %}Helios — Diagnostics{% endblock %}
+
+{% block helios_content %}
+
+{% if not diagnostics %}
+<div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+  <p class="text-sm text-gray-500">
+    {% if helios_online %}Daemon returned no diagnostic data.{% else %}Diagnostics unavailable — daemon offline.{% endif %}
+  </p>
+</div>
+{% else %}
+
+<!-- System state cards -->
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+  {% set cards = [
+    ('Version',  diagnostics.get('version', '—')),
+    ('PID',      diagnostics.get('pid', '—')),
+    ('Uptime',   ((diagnostics.get('uptime_seconds') or 0) // 60) ~ ' min'),
+    ('Memory',   (diagnostics.get('memory_mb', '—') ~ ' MB') if diagnostics.get('memory_mb') is not none else '—'),
+    ('CPU (5m)', (diagnostics.get('cpu_5min_avg_pct', '—') ~ '%') if diagnostics.get('cpu_5min_avg_pct') is not none else '—'),
+    ('Throughput', (diagnostics.get('transcription_throughput_realtime_multiple', '—') ~ '×') if diagnostics.get('transcription_throughput_realtime_multiple') is not none else '—'),
+  ] %}
+  {% for label, value in cards %}
+  <div class="rounded-xl border border-gray-200 bg-white p-3">
+    <p class="text-[10px] font-medium uppercase tracking-wide text-gray-500">{{ label }}</p>
+    <p class="mt-1 text-base font-semibold text-gray-900">{{ value }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Permissions + components -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <h3 class="text-sm font-semibold text-gray-900 mb-3">Permissions</h3>
+    {% set p = diagnostics.get('permissions') or {} %}
+    <dl class="space-y-1.5 text-sm">
+      <div class="flex items-center justify-between">
+        <dt class="text-gray-600">Microphone</dt>
+        <dd class="font-medium {% if p.get('mic_granted') %}text-emerald-600{% else %}text-red-600{% endif %}">
+          {{ 'granted' if p.get('mic_granted') else 'not granted' }}
+        </dd>
+      </div>
+      <div class="flex items-center justify-between">
+        <dt class="text-gray-600">Screen recording</dt>
+        <dd class="font-medium {% if p.get('screen_recording_granted') %}text-emerald-600{% else %}text-red-600{% endif %}">
+          {{ 'granted' if p.get('screen_recording_granted') else 'not granted' }}
+        </dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <h3 class="text-sm font-semibold text-gray-900 mb-3">Components</h3>
+    {% set cs = diagnostics.get('component_status') or [] %}
+    {% if cs %}
+    <ul class="space-y-1.5 text-sm">
+      {% for comp in cs %}
+      <li class="flex items-center justify-between">
+        <span class="text-gray-600">{{ comp.component }}</span>
+        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+          {% if comp.status == 'ok' %}bg-emerald-50 text-emerald-700
+          {% elif comp.status == 'unavailable' %}bg-amber-50 text-amber-700
+          {% else %}bg-red-50 text-red-700{% endif %}"
+          {% if comp.reason %}title="{{ comp.reason }}"{% endif %}>
+          {{ comp.status }}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-400">No component status reported.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Queues + storage -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <h3 class="text-sm font-semibold text-gray-900 mb-3">Queues</h3>
+    {% set q = diagnostics.get('queues') or {} %}
+    <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+      <dt class="text-gray-600">Transcription pending</dt>
+      <dd class="text-right font-medium text-gray-900">{{ q.get('transcription_pending', 0) }}</dd>
+      <dt class="text-gray-600">Transcription failed (24h)</dt>
+      <dd class="text-right font-medium text-gray-900">{{ q.get('transcription_failed_24h', 0) }}</dd>
+      <dt class="text-gray-600">Diarization pending</dt>
+      <dd class="text-right font-medium text-gray-900">{{ q.get('diarization_pending', 0) }}</dd>
+      <dt class="text-gray-600">Diarization failed (24h)</dt>
+      <dd class="text-right font-medium text-gray-900">{{ q.get('diarization_failed_24h', 0) }}</dd>
+    </dl>
+  </div>
+
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <h3 class="text-sm font-semibold text-gray-900 mb-3">Storage</h3>
+    {% set st = diagnostics.get('storage') or {} %}
+    <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+      <dt class="text-gray-600">Audio bytes</dt>
+      <dd class="text-right font-medium text-gray-900">{{ st.get('audio_bytes', 0) }}</dd>
+      <dt class="text-gray-600">Audio oldest (days)</dt>
+      <dd class="text-right font-medium text-gray-900">{{ st.get('audio_oldest_days', '—') }}</dd>
+      <dt class="text-gray-600">Thumbnails bytes</dt>
+      <dd class="text-right font-medium text-gray-900">{{ st.get('thumbnails_bytes', 0) }}</dd>
+      <dt class="text-gray-600">Database bytes</dt>
+      <dd class="text-right font-medium text-gray-900">{{ st.get('database_bytes', 0) }}</dd>
+    </dl>
+  </div>
+</div>
+
+<!-- Action buttons. Each button writes into its own #*-result span so
+     the button stays clickable. Buttons MUST use innerHTML swap. -->
+<div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+  <h3 class="text-sm font-semibold text-gray-900 mb-3">Actions</h3>
+  <div class="flex flex-wrap items-center gap-2">
+    <button hx-post="/helios/diagnostics/actions/test-capture"
+            hx-target="#test-capture-result"
+            hx-swap="innerHTML"
+            class="rounded-md bg-aegis-50 px-3 py-1.5 text-xs font-medium text-aegis-700 hover:bg-aegis-100">
+      Trigger test capture
+    </button>
+    <span id="test-capture-result"></span>
+    <button hx-post="/helios/diagnostics/actions/flush-queues"
+            hx-target="#flush-result"
+            hx-swap="innerHTML"
+            class="rounded-md bg-aegis-50 px-3 py-1.5 text-xs font-medium text-aegis-700 hover:bg-aegis-100">
+      Flush queues
+    </button>
+    <span id="flush-result"></span>
+    <button hx-post="/helios/diagnostics/actions/restart"
+            hx-confirm="Restart the Helios daemon?"
+            hx-target="#restart-result"
+            hx-swap="innerHTML"
+            class="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100">
+      Restart daemon
+    </button>
+    <span id="restart-result"></span>
+    <button hx-post="/helios/diagnostics/actions/bundle"
+            hx-target="#bundle-result"
+            hx-swap="innerHTML"
+            class="rounded-md bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100">
+      Create diagnostic bundle
+    </button>
+    <span id="bundle-result"></span>
+    <form hx-post="/helios/diagnostics/actions/reload-component"
+          hx-target="#reload-result"
+          hx-swap="innerHTML"
+          class="inline-flex items-center gap-2">
+      <select name="component" class="rounded-md border border-gray-300 px-2 py-1 text-xs">
+        <option value="transcription">transcription</option>
+        <option value="diarization">diarization</option>
+        <option value="ocr">ocr</option>
+        <option value="audio_capture">audio_capture</option>
+      </select>
+      <button type="submit"
+              class="rounded-md bg-aegis-50 px-3 py-1.5 text-xs font-medium text-aegis-700 hover:bg-aegis-100">
+        Reload component
+      </button>
+    </form>
+    <span id="reload-result"></span>
+  </div>
+</div>
+
+<!-- Recent events -->
+<div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+  <div class="border-b border-gray-100 px-6 py-3">
+    <h3 class="text-sm font-semibold text-gray-900">Recent events</h3>
+  </div>
+  {% set events = diagnostics.get('recent_events') or [] %}
+  {% if events %}
+  <div class="max-h-96 overflow-y-auto">
+    <ul class="divide-y divide-gray-50">
+      {% for ev in events[:100] %}
+      <li class="px-6 py-2 flex items-center gap-3 text-xs">
+        <span class="font-mono text-gray-400 w-20 shrink-0">{{ (ev.get('ts') or 0) | int }}</span>
+        <span class="w-12 shrink-0 font-semibold uppercase
+          {% if ev.get('level') == 'error' %}text-red-600
+          {% elif ev.get('level') == 'warn' or ev.get('level') == 'warning' %}text-amber-600
+          {% else %}text-gray-500{% endif %}">{{ ev.get('level', 'info') }}</span>
+        <span class="w-24 shrink-0 text-gray-600">{{ ev.get('component', '—') }}</span>
+        <span class="text-gray-800 truncate">{{ ev.get('event', '') }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% else %}
+  <p class="px-6 py-8 text-center text-sm text-gray-400">No recent events.</p>
+  {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}

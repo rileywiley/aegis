@@ -1,0 +1,33 @@
+{# Step 5 result — daemon reload outcome. #}
+<div id="wizard-pane">
+  {% if ok %}
+  <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-2">
+    <p class="font-medium">✓ Speaker identification enabled.</p>
+    <p>{{ detail }}</p>
+    <p class="text-emerald-700">
+      The daemon will load the diarization model on its next session.
+      It can take 30-60 seconds the first time.
+    </p>
+    <div class="pt-1">
+      <a href="/helios/settings"
+         class="inline-block rounded-md bg-emerald-600 px-3 py-1 font-semibold text-white hover:bg-emerald-700">
+        Done
+      </a>
+    </div>
+  </div>
+  {% else %}
+  <div class="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800 space-y-2">
+    <p class="font-medium">Setup failed</p>
+    <p>{{ detail }}</p>
+    <div>
+      <button type="button"
+              hx-get="/helios/settings/diarization/step/4"
+              hx-target="#wizard-pane"
+              hx-swap="outerHTML"
+              class="rounded-md bg-red-200 px-3 py-1 font-semibold text-red-900 hover:bg-red-300">
+        Back to step 4
+      </button>
+    </div>
+  </div>
+  {% endif %}
+</div>

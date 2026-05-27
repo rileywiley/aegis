@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{# Helios sub-navigation rendered above the page content. Pages set
+   ``helios_section`` in their context to highlight the active link. #}
+
+{% block content %}
+<div class="space-y-6">
+
+  {# Offline banner — graceful degradation when daemon is unreachable. #}
+  {% if helios_online is defined and not helios_online %}
+  <div class="rounded-xl border border-amber-300 bg-amber-50 p-4">
+    <div class="flex items-start gap-3">
+      <svg class="h-5 w-5 text-amber-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+      </svg>
+      <div>
+        <p class="text-sm font-medium text-amber-800">Helios daemon unreachable</p>
+        <p class="mt-1 text-xs text-amber-700">
+          Live capture data is unavailable. Pages will fall back to Aegis database content where possible.
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Helios sub-nav: links to the six pages. #}
+  <nav class="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
+    {% set helios_nav = [
+      ('/helios', 'Overview'),
+      ('/helios/sessions', 'Sessions'),
+      ('/helios/calendar', 'Calendar'),
+      ('/helios/diagnostics', 'Diagnostics'),
+      ('/helios/settings', 'Settings'),
+    ] %}
+    {% for href, label in helios_nav %}
+    <a href="{{ href }}"
+       class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors
+              {% if request.url.path == href or (href != '/helios' and request.url.path.startswith(href)) %}bg-aegis-50 text-aegis-700{% else %}text-gray-500 hover:bg-gray-100 hover:text-gray-700{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </nav>
+
+  {% block helios_content %}{% endblock %}
+</div>
+{% endblock %}

@@ -99,6 +99,11 @@ OPTIONS = {
         # notifications" on ImportError. Listing it as an include
         # forces py2app to ship the framework wrapper.
         "UserNotifications",
+        # PyObjC's Vision framework. Drives the OCR worker's
+        # VNRecognizeTextRequest. Same lazy-import gotcha as
+        # UserNotifications — without an explicit include the bundle
+        # would ship the dep but never wire the framework wrapper.
+        "Vision",
         # Common dynamic-import landmines for the transcription stack:
         # transformers loads model classes via importlib at runtime;
         # ctranslate2 uses dlopen + a cffi-style native shim. py2app's

@@ -215,6 +215,20 @@
         {% endif %}
       </div>
 
+      <!-- Voice notes -->
+      <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
+        <h3 class="text-sm font-semibold text-gray-900 mb-3">Voice notes</h3>
+        {% if voice_notes %}
+        <ul class="divide-y divide-gray-100 -mx-5">
+          {% for vn in voice_notes %}
+            {% include "voice_notes/_partials/voice_note_row.html" with context %}
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-400">No voice notes attached.</p>
+        {% endif %}
+      </div>
+
       <!-- Milestones -->
       <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
         <h3 class="text-sm font-semibold text-gray-900 mb-3">Milestones</h3>

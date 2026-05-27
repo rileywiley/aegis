@@ -9,7 +9,73 @@ Persistent tracker for Phase 4 (Menu Bar, Onboarding, Permissions, Voice Note UX
 - Closed: 2026-05-14 via `PHASE_4_CHECKPOINT.md`
 - Bug-report cycles: 4 (all resolved)
 - Smoke test (§12.5): **signed off** with 3 known limitations tracked as follow-ups
-- Next: Phase 5 (Screen OCR) — `HELIOS_BUILD_PLAN.md:1894`
+- Phase 6 (Helios Dashboard) — **COMPLETE 2026-05-27** via `PHASE_6_CHECKPOINT.md`
+- Phase 6 Wave 1 complete 2026-05-15 (Track 6A foundation)
+- Phase 6 Wave 2 — Tracks 6B + 6D complete 2026-05-15
+- Phase 6 Wave 3 — Tracks 6C + 6E complete 2026-05-20
+- Phase 6 Wave 4 — Review + Repair cycle 1 complete 2026-05-20
+- §12.7 smoke + deferral cleanup complete 2026-05-27 — 450 Aegis, 787 Helios, all green
+- Next: Phase 7 — Hardening (`HELIOS_BUILD_PLAN.md:2322`)
+
+## Phase 6 — Wave 3 (in progress)
+
+**Track 6C (2026-05-20)** — Settings page + HF wizard. 402 Aegis tests pass (+28 new). 12 new partials (`settings_section_*` × 7, `wizard_step_*` × 5, `wizard_step_4_result`, `wizard_step_5_result`, `save_banner`, `settings_hotkey_permission`). New helper `aegis/web/routes/_helios_settings_helpers.py` owns the atomic TOML mutation seam (`write_capture_toml` — temp+rename+chmod 600) and a duplicated Pydantic schema (helios.config is not import-resolvable from Aegis's venv). Hot-reload classification in `HOT_RELOADABLE_FIELDS: set[tuple[str,str]]`; unknown fields default to restart-required. Wizard state persists at `[diarization.setup_progress]`. Step 5 calls `HeliosClient.reload_component("diarization")` (already in Wave 1 inventory).
+
+Deviations:
+- `AXIsProcessTrusted` check returns `granted=False` stub — daemon doesn't expose the endpoint and spec forbade adding one. UI shows the System Settings deep-link loop as designed.
+- "Regenerate bearer token" button confirms via modal but the action is a stub `alert()` — no daemon endpoint exists yet.
+- `tomli_w` / `keyring` / `huggingface_hub` not in Aegis venv; wizard imports them lazily, tests mock via `sys.modules`, and a hand-rolled TOML dumper fallback covers the capture.toml subset.
+
+For the consolidated review:
+- Track 6C never modified `aegis/main.py` (router already registered by 6B)
+- Wave 2's response-shape changes from 6D (flush-queues / reload-component now 200, not 202) need cross-check against 6B's diagnostic action buttons — UI may still surface "queued" copy for endpoints that now return real data immediately
+- `HeliosClient` is the only call seam between Aegis and Helios; verify no `httpx.AsyncClient(...)` slipped into the dashboard handlers
+
+**Track 6E (2026-05-20)** — Voice notes UI + briefings + RAG. 429 tests pass (+55 since pre-Wave-3). 8 new files (voice_notes list/detail templates + row/card partials + briefings/RAG/profile tests). 7 modified: voice_notes routes, base.html nav, workstream_detail / ask_detail / dashboard templates, briefings.py voice_notes-in-range helper, rag.py voice_notes corpus.
+
+Deviations: per-person profile section deferred (no existing person detail route). `voice_note_attachments.target_type='ask'` doesn't distinguish email vs chat — flagged for repair.
+
+## Phase 6 — Wave 4 (Review + Repair) 2026-05-20
+
+Adversarial Plan-agent review found 5 Criticals + 7 Warnings + 2 Style notes (logged in `bug_report.md`). Top-3: `_action_response` shape drift hiding real failures across 5 endpoints, test-capture poll never wired, `voice_note_attachments.target_type='ask'` collision between EmailAsk and ChatAsk PK sequences.
+
+Repair cycle 1 (2026-05-20): single pass, no escalations. 17 files modified, 20 new regression tests, +20 Aegis tests (429→449). New migration `7a91f44b2c10_split_voice_note_attachment_ask_type.py` — splits `target_type='ask'` into `email_ask`/`chat_ask`. Detected 388 colliding IDs in the dev DB at upgrade time, classified all as `email_ask` (legacy resolver behavior) and logged. Upgrade → downgrade → upgrade tested clean. Test counts at sign-off: 449 Aegis pass, 787 Helios pass.
+
+All 12 actionable items in `bug_report.md` checked off with Resolution lines. 2 Style items left as `[ ]` per scope.
+
+## Phase 6 — Wave 2 (in progress)
+
+**Track 6B (2026-05-15)** — Aegis dashboard at `/helios`. 374 tests pass (+30 new). 15 files created: `aegis/web/routes/helios.py`, `aegis/web/routes/_helios_helpers.py` (speaker-name resolver per HELIOS.md §16.4), `aegis/web/templates/helios/{base,overview,sessions_list,session_detail,calendar,diagnostics,settings}.html` + 5 partials (`status_pill`, `session_row`, `transcript_segment`, `coverage_bar`, `calendar_toggle`). `aegis/main.py` registers the router. Settings page is a shell — section structure only; HF wizard + POST handler deferred to Track 6C. Sub-nav rendered via `helios/base.html`'s in-content strip rather than touching the global Aegis sidebar (avoids cross-track conflict).
+
+Verification: running Aegis instance returns 404 on `/helios` until the process restarts and picks up the new router registration. Tests prove the routes work — restart deferred to after Wave 3.
+
+**Track 6D (2026-05-15)** — Helios diagnostic endpoints. 787 tests pass (+28 new: 12 diagnostics + 9 sessions actions + 7 self-test). Replaced 4 stub endpoints with real implementations + added 3 new ones; extended `GET /v1/sessions` with `date` filter. New file `helios/src/helios/workers/self_test.py` (SelfTestRunner). 9 new Pydantic schemas. 6 new SQL queries (flush-queues, requeue-chunks, clear-segments/turns, events-as-json).
+
+Response shape changes (Track 6B must accommodate during Review):
+- `flush-queues` 202→**200**, body `{transcription_flushed, diarization_flushed}`
+- `reload-component` 202→**200**, body `{component, ok, detail}`. Unknown component returns 200 + `ok=false` (not 4xx).
+- `test-capture` POST stays **202** with `{job_id, status: "queued"}`; new `GET /v1/diagnostics/test-capture/{job_id}` for polling. Step names: `start_session`, `capture_window`, `stop_session`, `verify_chunks`, `transcribe`, `diarize`.
+- `bundle` returns `{bundle_path, filename, download_url, size_bytes, expires_at}` — use `download_url` directly.
+- `re-transcribe`/`re-diarize` 202→**200**, bodies `{session_id, chunks_requeued}` / `{session_id, jobs_requeued}`. `jobs_requeued=0` ⇒ diarization unavailable, dashboard should surface a hint.
+
+Spec deviation: self-test reuses `kind="continuous"` (DB CHECK constraint forbids new `self_test` value); session is auto-deleted at completion. Observable behavior identical.
+
+Spec deviation: there's no `transcription_jobs` queue table — flush flips affected chunks/sessions to `failed`. `re-transcribe`/`re-diarize` reverse the state.
+
+## Phase 6 — Wave 1 result (2026-05-15)
+
+Track 6A — Aegis foundation. 344 Aegis tests pass (+31 new). Migration `892742dc301d_helios_exclude_tristate.py` shipped — converts `meetings.helios_exclude` to nullable Boolean (Option C tri-state: `NULL` = use keyword exclusion, `True` = always exclude, `False` = always include / override keywords). Resets legacy `false` rows to `NULL` so the previous bool migration `f175f17074af` plays nicely with the new semantics — chose forward-only migration over rewriting the already-applied one.
+
+`/api/meetings/upcoming` `_exclusion_reason()` rewritten with tri-state precedence: `True` → `helios_opt_out`, `False` → explicit-include (skip keyword), `None` → defer to legacy `is_excluded` logic.
+
+`aegis/clients/helios.py` extended: 11 new methods covering all dashboard reads/writes. Track-6D-backed write stubs (restart/flush/test-capture/reload/bundle/re-transcribe/re-diarize) carry the agreed `# Backed by Track 6D in Phase 6 Wave 2.` comment so the dashboard can call them while the daemon endpoints are still 202-stubs.
+
+### Flags for Wave 2 agents
+
+- Daemon's `GET /v1/sessions` doesn't accept `status` or `date` query params today. Track 6D should add them on the daemon side OR Track 6B translates `date` to `start_ts_gte/lte` client-side before calling.
+- Track 6D needs to verify endpoint paths for `re-transcribe` / `re-diarize` / `bundle` match what the client now sends (`/v1/sessions/{id}/re-transcribe`, `/v1/sessions/{id}/re-diarize`, `/v1/diagnostics/bundle`).
+- `StatusResponse` + `DiagnosticsResponse` in `helios/api/schemas.py` already cover dashboard needs — no schema gap for Track 6B.
+- 2026-05-15 — Phase 5 §12.6 smoke **PASSED**. Closed out in `PHASE_5_CHECKPOINT.md`. Default flipped: `OcrConfig.gate_by_allowlist: bool = False`. Reason: Teams desktop minimizes during screen-share and hands frontmost to whatever app is being shared (Safari in the smoke run), starving the allowlist — 190 video packets/min, 0 OCR frames persisted. With the flip: session 80 manual_screen captured 29 frames (com.jetbrains.pycharm). Cleanup with raw_audio_days=0 archived 935 / skipped 275 untranscribed / errors=0. Per-meeting `DELETE /v1/sessions/80` removed the session row + 4 chunks + 29 ocr_frames cleanly. Driver: `scripts/run_cleanup_smoke.py`. Follow-up #22 — smarter screen-share-aware gating, deferred.
 
 **Wave 1 result (2026-05-07):** 10 agents complete. 620 Helios tests pass (+208 new), 313 Aegis tests pass (+16 new).
 

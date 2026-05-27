@@ -1,10 +1,11 @@
 """Data access layer — query patterns for Phase 1+."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from aegis.db.models import (
     ActionItem,
@@ -85,11 +86,16 @@ async def update_meeting_transcript(
     transcript_text: str,
     transcript_status: str,
 ) -> None:
-    stmt = (
-        update(Meeting)
-        .where(Meeting.id == meeting_id)
-        .values(transcript_text=transcript_text, transcript_status=transcript_status)
-    )
+    values: dict[str, object] = {
+        "transcript_text": transcript_text,
+        "transcript_status": transcript_status,
+    }
+    # Seed processing_status='pending' when a real transcript lands so the
+    # extraction cycle's filter (processing_status IN ('pending','failed'))
+    # actually picks it up. Without this, Helios-fed meetings are skipped.
+    if transcript_text and transcript_status in ("captured", "partial"):
+        values["processing_status"] = "pending"
+    stmt = update(Meeting).where(Meeting.id == meeting_id).values(**values)
     await session.execute(stmt)
     await session.commit()
 
@@ -170,6 +176,34 @@ async def upsert_system_health(
     )
     await session.execute(stmt)
     await session.commit()
+
+
+async def record_helios_heartbeat(
+    session: AsyncSession,
+    *,
+    healthy: bool,
+    timestamp: datetime | None = None,
+) -> None:
+    """Write a Helios heartbeat result to the ``system_health`` table.
+
+    Maps the boolean from ``HeliosClient.health_check()`` onto the
+    schema's ``status`` enum: True → 'healthy', False → 'down'. Uses
+    ``service='helios'`` as the row key so the dashboard can read the
+    daemon's status alongside the other pollers.
+    """
+    ts = timestamp or datetime.now(timezone.utc)
+    if healthy:
+        await upsert_system_health(
+            session, "helios", status="healthy", last_success=ts
+        )
+    else:
+        await upsert_system_health(
+            session,
+            "helios",
+            status="down",
+            last_error=ts,
+            last_error_message="Helios /v1/health unreachable",
+        )
 
 
 # ── Crash Recovery ───────────────────────────────────────
@@ -259,7 +293,6 @@ async def update_meeting_extraction(
     embedding: list[float],
 ) -> None:
     """Update a meeting with extraction results."""
-    from datetime import timezone
 
     stmt = (
         update(Meeting)
@@ -722,7 +755,6 @@ async def update_email_extraction(
     embedding: list[float],
 ) -> None:
     """Update an email with extraction results."""
-    from datetime import timezone
 
     stmt = (
         update(Email)
@@ -769,10 +801,13 @@ async def get_all_asks(
     """Fetch combined email_asks + chat_asks with filters and pagination.
 
     Returns (list of ask dicts with source info, total_count).
-    source: 'email', 'chat', or None (both).
+    source: 'email', 'chat', 'voice_note', or None (both email + chat).
+    'voice_note' restricts to asks (email or chat) that have at least one
+    row in ``voice_note_attachments`` with the matching target_type — i.e.
+    asks the user surfaced or referenced from a voice note.
     """
-    include_email = source in (None, "email")
-    include_chat = source in (None, "chat")
+    include_email = source in (None, "email", "voice_note")
+    include_chat = source in (None, "chat", "voice_note")
 
     ea_stmt = select(EmailAsk).order_by(EmailAsk.created.desc())
     ca_stmt = select(ChatAsk).order_by(ChatAsk.created.desc())
@@ -786,6 +821,22 @@ async def get_all_asks(
     if ask_type:
         ea_stmt = ea_stmt.where(EmailAsk.ask_type == ask_type)
         ca_stmt = ca_stmt.where(ChatAsk.ask_type == ask_type)
+
+    # voice_note source restricts each query to asks present in
+    # voice_note_attachments under the matching target_type. Wave 4's
+    # migration `7a91f44b2c10` split target_type='ask' into 'email_ask'
+    # and 'chat_ask' so the per-table filter is exact.
+    if source == "voice_note":
+        from aegis.db.models import VoiceNoteAttachment
+
+        ea_ids = select(VoiceNoteAttachment.target_id).where(
+            VoiceNoteAttachment.target_type == "email_ask"
+        )
+        ca_ids = select(VoiceNoteAttachment.target_id).where(
+            VoiceNoteAttachment.target_type == "chat_ask"
+        )
+        ea_stmt = ea_stmt.where(EmailAsk.id.in_(ea_ids))
+        ca_stmt = ca_stmt.where(ChatAsk.id.in_(ca_ids))
 
     ea_count = 0
     ca_count = 0
@@ -1015,3 +1066,36 @@ async def get_department_workstreams(
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+# ── Meetings Repository (class-style, used by Helios API) ──
+
+
+class MeetingsRepository:
+    """Class-style accessor used by the Helios-facing API.
+
+    Wraps the existing module-level helpers but offers an instance API so the
+    `/api/meetings/upcoming` route can `Depends` on a session and pass a single
+    object around.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_in_range(
+        self, start_dt: datetime, end_dt: datetime
+    ) -> list[Meeting]:
+        """Return meetings whose start_time falls in [start_dt, end_dt].
+
+        Eager-loads `attendees` so callers can compute attendee_count without
+        triggering N+1 queries.
+        """
+        stmt = (
+            select(Meeting)
+            .where(Meeting.start_time >= start_dt)
+            .where(Meeting.start_time <= end_dt)
+            .order_by(Meeting.start_time)
+            .options(selectinload(Meeting.attendees))
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())

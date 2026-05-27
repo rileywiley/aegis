@@ -1,0 +1,63 @@
+{# Capture mode section. HELIOS.md §13.7. #}
+{% set cap = toml.get("capture", {}) %}
+<div class="space-y-4">
+
+  <label class="flex items-start gap-3">
+    <input type="checkbox"
+           name="capture.calendar_triggered"
+           {% if cap.get("calendar_triggered") %}checked{% endif %}
+           class="mt-1 rounded border-gray-300">
+    <input type="hidden" name="__bool__.capture.calendar_triggered" value="1">
+    <span class="text-sm text-gray-800">
+      Calendar-triggered capture
+      <span class="block text-xs text-gray-400">{{ field_label('capture', 'calendar_triggered') }}</span>
+    </span>
+  </label>
+
+  <label class="flex items-start gap-3">
+    <input type="checkbox"
+           name="capture.continuous_enabled"
+           {% if cap.get("continuous_enabled") %}checked{% endif %}
+           class="mt-1 rounded border-gray-300">
+    <input type="hidden" name="__bool__.capture.continuous_enabled" value="1">
+    <span class="text-sm text-gray-800">
+      Continuous capture between meetings
+      <span class="block text-xs text-gray-400">{{ field_label('capture', 'continuous_enabled') }}</span>
+    </span>
+  </label>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">Pre-start padding (seconds)</span>
+      <input type="number" min="0" max="600"
+             name="capture.calendar_pre_start_seconds"
+             value="{{ cap.get('calendar_pre_start_seconds', 60) }}"
+             class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      <span class="text-xs text-gray-400">{{ field_label('capture', 'calendar_pre_start_seconds') }}</span>
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">Post-end padding (seconds)</span>
+      <input type="number" min="0" max="1800"
+             name="capture.calendar_post_end_seconds"
+             value="{{ cap.get('calendar_post_end_seconds', 300) }}"
+             class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      <span class="text-xs text-gray-400">{{ field_label('capture', 'calendar_post_end_seconds') }}</span>
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">Continuous hard stop (local time, HH:MM)</span>
+      <input type="text" pattern="\d{2}:\d{2}"
+             name="capture.continuous_hard_stop_local"
+             value="{{ cap.get('continuous_hard_stop_local', '17:30') }}"
+             class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      <span class="text-xs text-gray-400">{{ field_label('capture', 'continuous_hard_stop_local') }}</span>
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">4-hour prompt interval (hours)</span>
+      <input type="number" step="0.1" min="0" max="24"
+             name="capture.continuous_prompt_hours"
+             value="{{ cap.get('continuous_prompt_hours', 4.0) }}"
+             class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      <span class="text-xs text-gray-400">{{ field_label('capture', 'continuous_prompt_hours') }}</span>
+    </label>
+  </div>
+</div>

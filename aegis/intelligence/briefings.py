@@ -27,6 +27,7 @@ from aegis.db.models import (
     Meeting,
     MeetingAttendee,
     Person,
+    VoiceNote,
     Workstream,
 )
 from aegis.intelligence.meeting_prep import generate_meeting_prep
@@ -273,6 +274,41 @@ async def _get_workstream_health(session: AsyncSession) -> list[dict]:
     return ws_data
 
 
+async def _get_voice_notes_in_range(
+    session: AsyncSession, start: datetime, end: datetime
+) -> list[dict]:
+    """Fetch voice notes in [start, end). User-generated context.
+
+    Voice notes are user-spoken self-directed thoughts (note-to-self,
+    follow-ups, reminders). For briefings we include the edited
+    transcript when present, plus any deadline / target person hints
+    extracted earlier. We cap each transcript at 600 chars to keep the
+    LLM context bounded — full content is always available via the
+    detail page.
+    """
+    stmt = (
+        select(VoiceNote)
+        .where(
+            VoiceNote.started_at >= start,
+            VoiceNote.started_at < end,
+        )
+        .order_by(VoiceNote.started_at)
+    )
+    result = await session.execute(stmt)
+    out: list[dict] = []
+    for vn in result.scalars().all():
+        text = vn.transcript_text_edited or vn.transcript_text or ""
+        out.append({
+            "id": vn.id,
+            "started_at": vn.started_at.isoformat(),
+            "duration_seconds": vn.duration_seconds,
+            "triggered_by": vn.triggered_by,
+            "is_excerpt": vn.is_excerpt,
+            "transcript": text[:600],
+        })
+    return out
+
+
 async def _get_pending_drafts_count(session: AsyncSession) -> int:
     """Count pending review drafts."""
     stmt = (
@@ -327,8 +363,10 @@ Generate a morning briefing using this data. Structure it with these sections:
 1. Today's Meetings (with suggested topics per meeting based on open items with attendees)
 2. Requires Your Action (decisions needed, pending asks, stale items)
 3. Overnight Activity Summary
-4. Workstream Health Overview
-5. Drafts Ready for Review
+4. Recent Voice Notes (only include this section if voice_notes is non-empty;
+   summarize themes, surface follow-ups the user spoke for themselves)
+5. Workstream Health Overview
+6. Drafts Ready for Review
 
 Data:
 {data}"""
@@ -347,12 +385,27 @@ async def generate_morning_briefing(session: AsyncSession) -> str:
     workstreams = await _get_workstream_health(session)
     drafts_count = await _get_pending_drafts_count(session)
 
+    # Voice notes from "overnight + today so far" — same window as overnight
+    # activity. User-generated context the briefing prompt summarises.
+    import zoneinfo as _zi
+    _tz = _zi.ZoneInfo(get_settings().aegis_timezone)
+    _local_now_dt = datetime.now(_tz)
+    _yesterday_6pm_local = (_local_now_dt - timedelta(days=1)).replace(
+        hour=18, minute=0, second=0, microsecond=0
+    )
+    voice_notes_window_start = _yesterday_6pm_local.astimezone(timezone.utc)
+    voice_notes_window_end = _local_now_dt.astimezone(timezone.utc)
+    voice_notes = await _get_voice_notes_in_range(
+        session, voice_notes_window_start, voice_notes_window_end
+    )
+
     context = {
         "todays_meetings": meetings,
         "requires_action": requires_action,
         "overnight_activity": overnight,
         "workstream_health": workstreams,
         "pending_drafts_count": drafts_count,
+        "voice_notes": voice_notes,
         "date": _local_now().strftime("%A, %B %d, %Y"),
     }
 
@@ -364,7 +417,6 @@ async def generate_morning_briefing(session: AsyncSession) -> str:
     )
 
     # Store briefing
-    from datetime import datetime, timezone
     briefing = Briefing(
         briefing_type="morning",
         content=briefing_content,
@@ -400,7 +452,9 @@ Generate a Monday planning brief for the week. Structure it with:
 2. Calendar Overview (key meetings this week)
 3. Deadlines This Week (action items and asks with upcoming deadlines)
 4. Workstreams Needing Attention (stale, overdue, or at risk)
-5. Carryover from Last Week (incomplete items)
+5. Voice Notes from the Past Week (only include this section if non-empty;
+   surface user-spoken priorities, follow-ups, and reminders)
+6. Carryover from Last Week (incomplete items)
 
 Data:
 {data}"""
@@ -491,12 +545,16 @@ async def generate_monday_brief(session: AsyncSession) -> str:
         for a in carryover_result.scalars().all()
     ]
 
+    # Voice notes from the past week, useful context for weekly planning
+    voice_notes = await _get_voice_notes_in_range(session, week_start - timedelta(days=7), week_start)
+
     context = {
         "week_meetings": meetings,
         "open_action_items": open_action_items,
         "open_email_asks": open_email_asks,
         "workstreams_needing_attention": workstreams,
         "carryover_from_last_week": carryover,
+        "voice_notes": voice_notes,
         "week_of": _local_now().strftime("%B %d, %Y"),
     }
 
@@ -547,7 +605,9 @@ Generate a Friday recap for this week. Structure it with:
 2. Commitment Tracker (made / completed / overdue)
 3. Ask Completion Rate (completed vs total)
 4. Workstream Summary (progress across active workstreams)
-5. Items Carrying Into Next Week
+5. Voice Notes Recorded This Week (only include this section if non-empty;
+   highlight follow-ups the user captured but hasn't yet acted on)
+6. Items Carrying Into Next Week
 
 Data:
 {data}"""
@@ -663,6 +723,9 @@ async def generate_friday_recap(session: AsyncSession) -> str:
         for a in carryover_result.scalars().all()
     ]
 
+    # Voice notes recorded during the work week
+    voice_notes = await _get_voice_notes_in_range(session, week_start, week_end)
+
     context = {
         "decisions_this_week": decisions,
         "commitments": {
@@ -677,6 +740,7 @@ async def generate_friday_recap(session: AsyncSession) -> str:
         },
         "workstreams": workstreams,
         "carrying_into_next_week": carryover,
+        "voice_notes": voice_notes,
         "week_ending": _local_now().strftime("%B %d, %Y"),
     }
 

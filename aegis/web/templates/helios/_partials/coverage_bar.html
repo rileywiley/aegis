@@ -1,0 +1,25 @@
+{# Coverage bar — visualises captured_seconds vs the session window.
+   ``coverage`` is the transcript-coverage dict; ``total_seconds`` is the
+   session window length (ended_at - started_at). #}
+{% set captured = (coverage or {}).get('captured_seconds') or 0 %}
+{% set pct = ((captured / total_seconds) * 100) if total_seconds and total_seconds > 0 else 0 %}
+{% set pct_int = pct | round(0) | int %}
+<div>
+  <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+    <span>Capture coverage</span>
+    <span class="font-semibold text-gray-700">{{ pct_int }}%</span>
+  </div>
+  <div class="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+    <div class="h-2 rounded-full
+      {% if pct_int >= 90 %}bg-emerald-500
+      {% elif pct_int >= 60 %}bg-amber-400
+      {% else %}bg-red-400{% endif %}"
+      style="width: {{ pct_int }}%"></div>
+  </div>
+  {% set unavail = (coverage or {}).get('unavailable_ranges') or [] %}
+  {% if unavail %}
+  <p class="mt-2 text-xs text-gray-500">
+    {{ unavail | length }} unavailable range{{ 's' if unavail | length != 1 else '' }}
+  </p>
+  {% endif %}
+</div>

@@ -1,0 +1,154 @@
+{% extends "helios/base.html" %}
+
+{% block title %}Helios — Settings{% endblock %}
+{% block page_title %}Helios — Settings{% endblock %}
+
+{% block helios_content %}
+
+{% if banner is defined and banner and banner.message %}
+{% include "helios/_partials/save_banner.html" %}
+{% endif %}
+
+<form id="helios-settings-form"
+      hx-post="/helios/settings"
+      hx-target="#helios-settings-form"
+      hx-swap="outerHTML"
+      class="space-y-3">
+
+  {# ── 1. Capture mode ─────────────────────────────── #}
+  <details class="rounded-xl border border-gray-200 bg-white shadow-sm" open>
+    <summary class="cursor-pointer px-5 py-3 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-900">Capture mode</span>
+      <span class="text-xs text-gray-400">Armed vs always-on capture</span>
+    </summary>
+    <div class="border-t border-gray-100 px-5 py-4">
+      {% include "helios/_partials/settings_section_capture.html" %}
+    </div>
+  </details>
+
+  {# ── 2. Meeting exclusion keywords ─────────────────── #}
+  <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <summary class="cursor-pointer px-5 py-3 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-900">Meeting exclusion keywords</span>
+      <span class="text-xs text-gray-400">{{ field_label('exclusion', 'keywords') }}</span>
+    </summary>
+    <div class="border-t border-gray-100 px-5 py-4">
+      {% include "helios/_partials/settings_section_exclusion.html" %}
+    </div>
+  </details>
+
+  {# ── 3. Meeting apps for OCR ───────────────────────── #}
+  <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <summary class="cursor-pointer px-5 py-3 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-900">Meeting apps for OCR</span>
+      <span class="text-xs text-gray-400">{{ field_label('ocr', 'meeting_apps') }}</span>
+    </summary>
+    <div class="border-t border-gray-100 px-5 py-4">
+      {% include "helios/_partials/settings_section_ocr.html" %}
+    </div>
+  </details>
+
+  {# ── 4. Retention policy ────────────────────────────── #}
+  <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <summary class="cursor-pointer px-5 py-3 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-900">Retention policy</span>
+      <span class="text-xs text-gray-400">{{ hot_reloadable_label }}</span>
+    </summary>
+    <div class="border-t border-gray-100 px-5 py-4">
+      {% include "helios/_partials/settings_section_retention.html" %}
+    </div>
+  </details>
+
+  {# ── 5. Transcription ───────────────────────────────── #}
+  <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <summary class="cursor-pointer px-5 py-3 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-900">Transcription</span>
+      <span class="text-xs text-gray-400">{{ restart_required_label }}</span>
+    </summary>
+    <div class="border-t border-gray-100 px-5 py-4">
+      {% include "helios/_partials/settings_section_transcription.html" %}
+    </div>
+  </details>
+
+  {# ── 6. Voice notes ─────────────────────────────────── #}
+  <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <summary class="cursor-pointer px-5 py-3 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-900">Voice notes</span>
+      <span class="text-xs text-gray-400">Most apply immediately</span>
+    </summary>
+    <div class="border-t border-gray-100 px-5 py-4">
+      {% include "helios/_partials/settings_section_voice_notes.html" %}
+    </div>
+  </details>
+
+  {# ── 8. Advanced ────────────────────────────────────── #}
+  <details class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <summary class="cursor-pointer px-5 py-3 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-900">Advanced</span>
+      <span class="text-xs text-gray-400">{{ restart_required_label }}</span>
+    </summary>
+    <div class="border-t border-gray-100 px-5 py-4">
+      {% include "helios/_partials/settings_section_advanced.html" %}
+    </div>
+  </details>
+
+  <div class="flex items-center justify-end gap-3 pt-2">
+    <button type="submit"
+            class="rounded-lg bg-aegis-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-aegis-700">
+      Save changes
+    </button>
+  </div>
+</form>
+
+{# ── 7. Speaker identification wizard (separate from form) ── #}
+<div class="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+  <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+    <span class="text-sm font-semibold text-gray-900">Speaker identification</span>
+    <span class="text-xs text-gray-400">HuggingFace setup (5 steps)</span>
+  </div>
+  <div class="px-5 py-4">
+    <p class="text-sm text-gray-500 mb-4">
+      Set up speaker diarization by configuring a free HuggingFace account and accepting
+      the model licenses. Progress is saved between steps.
+    </p>
+    <div id="diarization-wizard">
+      {% if wizard_state.get("step5_completed") %}
+      <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-2">
+        <p class="font-medium">✓ Speaker identification configured.</p>
+        {% if wizard_state.get("token_username") %}
+        <p>HF account: <span class="font-mono">{{ wizard_state.get("token_username") }}</span></p>
+        {% endif %}
+        <p class="text-emerald-700">
+          Diarization runs automatically on every captured session. To re-run
+          the setup (e.g. token rotation), use "Reset wizard" below.
+        </p>
+        <div class="pt-1">
+          <button type="button"
+                  hx-post="/helios/settings/diarization/reset"
+                  hx-target="#diarization-wizard"
+                  hx-swap="innerHTML"
+                  hx-confirm="Reset the diarization wizard? Your HF token in the keychain is NOT removed."
+                  class="rounded-md bg-emerald-100 px-3 py-1 font-semibold text-emerald-800 hover:bg-emerald-200">
+            Reset wizard
+          </button>
+        </div>
+      </div>
+      {% else %}
+      {% set initial_step = 1 %}
+      {% if wizard_state.get("step4_completed") %}{% set initial_step = 5 %}
+      {% elif wizard_state.get("step3_completed") %}{% set initial_step = 4 %}
+      {% elif wizard_state.get("step2_completed") %}{% set initial_step = 3 %}
+      {% elif wizard_state.get("step1_completed") %}{% set initial_step = 2 %}
+      {% endif %}
+      <div hx-get="/helios/settings/diarization/step/{{ initial_step }}"
+           hx-trigger="load"
+           hx-target="this"
+           hx-swap="outerHTML">
+        <p class="text-sm text-gray-400">Loading wizard…</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

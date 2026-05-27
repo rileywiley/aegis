@@ -1,0 +1,23 @@
+{# Wizard step 5 — model download trigger. #}
+<div class="space-y-3" id="wizard-pane">
+  <h4 class="text-sm font-semibold text-gray-900">Step 5 of 5 — Enable speaker identification</h4>
+  <p class="text-xs text-gray-500">
+    Clicking below stores your token in the macOS keychain, flips
+    <code>[diarization].enabled = true</code> in <code>capture.toml</code>, and asks
+    the daemon to reload its diarization component. The daemon downloads the
+    models on its next worker init.
+  </p>
+  <form hx-post="/helios/settings/diarization/download-models"
+        hx-target="#wizard-pane"
+        hx-swap="outerHTML"
+        class="flex items-center gap-2">
+    <input type="text" name="hf_token"
+           placeholder="Paste token again to confirm"
+           autocomplete="off"
+           class="rounded-md border-gray-300 text-sm font-mono w-72">
+    <button type="submit"
+            class="rounded-md bg-aegis-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aegis-700">
+      Enable diarization
+    </button>
+  </form>
+</div>

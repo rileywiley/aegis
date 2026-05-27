@@ -1,0 +1,29 @@
+{# Save-result banner. Surfaces "applies immediately" vs "restart required"
+   when applicable. Track 6C — Phase 6. #}
+{% set status = banner.status %}
+{% if status == "ok" %}
+<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-3">
+  <p class="text-sm font-medium text-emerald-800">{{ banner.message }}</p>
+  {% if banner.restart_needed %}
+  <div class="mt-2 flex items-center gap-3">
+    <p class="text-xs text-amber-800">
+      Restart needed for: {{ banner.restart_needed | join(", ") }}
+    </p>
+    <button type="button"
+            hx-post="/helios/diagnostics/actions/restart"
+            hx-swap="outerHTML"
+            class="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700">
+      Restart Daemon
+    </button>
+  </div>
+  {% endif %}
+</div>
+{% elif status == "warning" %}
+<div class="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-3">
+  <p class="text-sm font-medium text-amber-900">{{ banner.message }}</p>
+</div>
+{% else %}
+<div class="rounded-xl border border-red-200 bg-red-50 p-4 mb-3">
+  <p class="text-sm font-medium text-red-800">{{ banner.message }}</p>
+</div>
+{% endif %}

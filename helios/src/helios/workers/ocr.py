@@ -128,10 +128,18 @@ def gate_allows_frame(
     frontmost_bundle: str | None,
     allowlist: list[str],
     screen_capture_override_until: float | None,
+    gate_by_allowlist: bool = True,
 ) -> bool:
     """Return True iff the OCR worker is allowed to process the current frame.
 
-    Two independent reasons can open the gate:
+    When ``gate_by_allowlist`` is False the gate is always open (modulo
+    the override path which always opens regardless). This is the
+    current default — Teams desktop minimizes during screen-share and
+    starves the allowlist, so we capture everything until smarter
+    screen-share-aware gating lands.
+
+    When ``gate_by_allowlist`` is True, two independent reasons can
+    open the gate:
 
     * **Override**: the user pressed "Capture screen for N minutes" and
       ``screen_capture_override_until`` is in the future. The frontmost
@@ -147,6 +155,8 @@ def gate_allows_frame(
         screen_capture_override_until is not None
         and now_ts < screen_capture_override_until
     ):
+        return True
+    if not gate_by_allowlist:
         return True
     if frontmost_bundle is None:
         return False
@@ -439,7 +449,6 @@ class OcrWorker:
         # this for the override gate AND for the eventual DB write.
         active = await self._active_session_provider()
         if active is None:
-            # No session ⇒ no row to attribute the frame to. Drop.
             return
         session_id, override_until = active
 
@@ -454,6 +463,7 @@ class OcrWorker:
             frontmost_bundle=bundle,
             allowlist=cfg.meeting_apps,
             screen_capture_override_until=override_until,
+            gate_by_allowlist=cfg.gate_by_allowlist,
         ):
             return
 

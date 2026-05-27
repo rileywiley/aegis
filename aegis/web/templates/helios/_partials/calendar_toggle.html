@@ -1,0 +1,23 @@
+{# Tri-state toggle row for a single meeting. Posted to /helios/calendar/{id}/exclude. #}
+{% set he = meeting.helios_exclude %}
+<form id="helios-toggle-{{ meeting.id }}"
+      hx-post="/helios/calendar/{{ meeting.id }}/exclude"
+      hx-target="#helios-toggle-{{ meeting.id }}"
+      hx-swap="outerHTML"
+      class="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+  <button type="submit" name="value" value="default"
+          class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors
+                 {% if he is none %}bg-white text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+    Default
+  </button>
+  <button type="submit" name="value" value="include"
+          class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors
+                 {% if he is sameas false %}bg-emerald-600 text-white shadow-sm{% else %}text-gray-500 hover:text-emerald-700{% endif %}">
+    Always include
+  </button>
+  <button type="submit" name="value" value="exclude"
+          class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors
+                 {% if he is sameas true %}bg-red-600 text-white shadow-sm{% else %}text-gray-500 hover:text-red-700{% endif %}">
+    Always exclude
+  </button>
+</form>

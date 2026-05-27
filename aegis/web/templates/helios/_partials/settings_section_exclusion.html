@@ -1,0 +1,39 @@
+{# Meeting exclusion keywords — chip list, add/remove via Alpine.js. #}
+{% set kw = (toml.get("exclusion") or {}).get("keywords", []) %}
+<div class="space-y-3"
+     x-data='{
+       items: {{ kw | tojson }},
+       draft: "",
+       add() {
+         const v = this.draft.trim();
+         if (!v || this.items.includes(v)) { this.draft = ""; return; }
+         this.items.push(v);
+         this.draft = "";
+       },
+       remove(i) { this.items.splice(i, 1); },
+     }'>
+  <p class="text-xs text-gray-500">
+    Events whose title contains any of these words are auto-excluded.
+    Submit with the form to save.
+  </p>
+  <div class="flex flex-wrap gap-2">
+    <template x-for="(word, i) in items" :key="word">
+      <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs">
+        <span x-text="word"></span>
+        <input type="hidden" name="exclusion.keywords[]" :value="word">
+        <button type="button" class="text-gray-400 hover:text-red-600"
+                @click="remove(i)">&times;</button>
+      </span>
+    </template>
+  </div>
+  <div class="flex items-center gap-2">
+    <input type="text" x-model="draft"
+           @keydown.enter.prevent="add()"
+           placeholder="Add keyword…"
+           class="rounded-md border-gray-300 text-sm w-64">
+    <button type="button" @click="add()"
+            class="rounded-md bg-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-300">
+      Add
+    </button>
+  </div>
+</div>

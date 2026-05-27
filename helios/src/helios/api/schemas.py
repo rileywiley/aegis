@@ -307,6 +307,71 @@ class ReloadComponentRequest(BaseModel):
     component: str = Field(..., min_length=1)
 
 
+class FlushQueuesResponse(BaseModel):
+    """Synchronous response for ``POST /v1/diagnostics/flush-queues``.
+
+    Counts the rows whose pending state was cleared in each queue so the
+    dashboard can show "Flushed N transcription, M diarization items".
+    """
+
+    transcription_flushed: int = 0
+    diarization_flushed: int = 0
+
+
+class ReloadComponentResponse(BaseModel):
+    """Synchronous response for ``POST /v1/diagnostics/reload-component``."""
+
+    component: str
+    ok: bool
+    detail: str = ""
+
+
+class TestCaptureStep(BaseModel):
+    """One step of the 60s self-test (HELIOS_BUILD_PLAN §6D.2)."""
+
+    name: str
+    ok: bool
+    detail: str = ""
+
+
+class TestCaptureStartResponse(BaseModel):
+    """Returned immediately from ``POST /v1/diagnostics/test-capture``.
+
+    The dashboard polls ``GET /v1/diagnostics/test-capture/{job_id}`` for
+    progress / final results.
+    """
+
+    job_id: str
+    status: Literal["queued", "running", "complete", "failed"] = "queued"
+
+
+class TestCaptureStatusResponse(BaseModel):
+    """Returned from ``GET /v1/diagnostics/test-capture/{job_id}``."""
+
+    job_id: str
+    status: Literal["queued", "running", "complete", "failed"]
+    started_at: float | None = None
+    finished_at: float | None = None
+    steps: list[TestCaptureStep] = Field(default_factory=list)
+    session_id: int | None = None
+
+
+class BundleResponse(BaseModel):
+    """Returned from ``POST /v1/diagnostics/bundle`` (HELIOS.md §13.11).
+
+    ``bundle_path`` is the absolute path on disk; ``download_url`` is the
+    convenience HTTP path the dashboard can hit to stream the file.
+    ``expires_at`` is the epoch second after which the cleanup task
+    removes the bundle.
+    """
+
+    bundle_path: str
+    filename: str
+    download_url: str
+    size_bytes: int
+    expires_at: float
+
+
 # ---------------------------------------------------------------------------
 # /v1/sessions/*
 # ---------------------------------------------------------------------------
@@ -377,6 +442,32 @@ class SessionActionResponse(BaseModel):
     session_id: int
 
 
+class ReTranscribeResponse(BaseModel):
+    """Synchronous response for ``POST /v1/sessions/{id}/re-transcribe``.
+
+    ``chunks_requeued`` is the number of ``audio_chunks`` rows flipped
+    back to ``status='recorded'`` (and ``transcribed_at`` cleared) so
+    the transcription worker will re-process them on the next poll.
+    """
+
+    session_id: int
+    chunks_requeued: int = 0
+
+
+class ReDiarizeResponse(BaseModel):
+    """Synchronous response for ``POST /v1/sessions/{id}/re-diarize``.
+
+    ``jobs_requeued`` is 1 when the session was successfully enqueued
+    onto the diarization worker, 0 when the worker is unavailable
+    (diarization disabled / missing HF token). On unavailable, the
+    session's ``diarization_status`` is reset to ``pending`` so the
+    worker can pick it up later if it becomes available.
+    """
+
+    session_id: int
+    jobs_requeued: int = 0
+
+
 class SessionDeleteResponse(BaseModel):
     """``DELETE /v1/sessions/{session_id}`` response (HELIOS.md §7.3 / §17).
 
@@ -407,6 +498,21 @@ class AudioChunkResponse(BaseModel):
     samples: int
     status: str
     partial: bool = False
+    duration_seconds: float = 0.0
+    has_audio_file: bool = False
+
+
+class SessionAudioChunksResponse(BaseModel):
+    """Response for ``GET /v1/sessions/{id}/audio-chunks``.
+
+    Lists raw audio chunks (one per mic/system 30s slice) for the session
+    detail page's Audio tab. ``has_audio_file`` is False when the chunk
+    was archived by the cleanup worker (``path = NULL``); the dashboard
+    hides the inline player in that case.
+    """
+
+    session_id: int
+    chunks: list[AudioChunkResponse]
 
 
 class AudioListResponse(BaseModel):
@@ -497,6 +603,7 @@ __all__ = [
     "ActiveVoiceNoteResponse",
     "AudioChunkResponse",
     "AudioListResponse",
+    "BundleResponse",
     "CapturePauseUntilRequest",
     "CapturePauseUntilResponse",
     "CaptureResumeResponse",
@@ -511,6 +618,7 @@ __all__ = [
     "DiagnosticsAcceptedResponse",
     "DiagnosticsResponse",
     "ErrorResponse",
+    "FlushQueuesResponse",
     "LastChunkInfo",
     "LastChunksResponse",
     "NextCalendarEventResponse",
@@ -520,13 +628,19 @@ __all__ = [
     "PromptResponseRequest",
     "PromptResponseResponse",
     "QueueCountsResponse",
+    "ReDiarizeResponse",
+    "ReTranscribeResponse",
     "ReloadComponentRequest",
+    "ReloadComponentResponse",
     "SessionActionResponse",
     "SessionDeleteResponse",
     "SessionResponse",
     "SessionsListResponse",
     "StatusResponse",
     "StorageDiagnosticsResponse",
+    "TestCaptureStartResponse",
+    "TestCaptureStatusResponse",
+    "TestCaptureStep",
     "TranscriptCoverage",
     "TranscriptCoverageRange",
     "TranscriptResponse",

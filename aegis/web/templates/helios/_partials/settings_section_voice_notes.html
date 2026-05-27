@@ -1,0 +1,110 @@
+{# Voice notes section. Includes hotkey AX permission flow. #}
+{% set vn = toml.get("voice_note", {}) %}
+{% set ind = vn.get("indicator", {}) %}
+<div class="space-y-4">
+
+  <label class="flex items-start gap-3">
+    <input type="checkbox"
+           name="voice_note.enabled"
+           {% if vn.get("enabled", True) %}checked{% endif %}
+           class="mt-1 rounded border-gray-300">
+    <input type="hidden" name="__bool__.voice_note.enabled" value="1">
+    <span class="text-sm text-gray-800">
+      Voice notes enabled
+      <span class="block text-xs text-gray-400">{{ field_label('voice_note', 'enabled') }}</span>
+    </span>
+  </label>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">Max duration (seconds, 10–1800)</span>
+      <input type="number" min="10" max="1800"
+             name="voice_note.max_duration_seconds"
+             value="{{ vn.get('max_duration_seconds', 300) }}"
+             class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      <span class="text-xs text-gray-400">{{ field_label('voice_note', 'max_duration_seconds') }}</span>
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">Auto-save delay (seconds, 2–60)</span>
+      <input type="number" min="2" max="60"
+             name="voice_note.auto_save_timeout_seconds"
+             value="{{ vn.get('auto_save_timeout_seconds', 10) }}"
+             class="mt-1 w-full rounded-md border-gray-300 text-sm">
+      <span class="text-xs text-gray-400">{{ field_label('voice_note', 'auto_save_timeout_seconds') }}</span>
+    </label>
+  </div>
+
+  <fieldset class="space-y-2">
+    <legend class="text-xs font-medium text-gray-700">Default save action</legend>
+    {% set dsa = vn.get('default_save_action', 'save_with_suggestions') %}
+    {% for opt, label in [
+        ('save_with_suggestions', 'Save with workstream suggestions'),
+        ('save_unattached',       'Save unattached (no auto-link)'),
+        ('discard',               'Discard'),
+    ] %}
+    <label class="flex items-center gap-2 text-sm">
+      <input type="radio" name="voice_note.default_save_action"
+             value="{{ opt }}" {% if dsa == opt %}checked{% endif %}>
+      {{ label }}
+    </label>
+    {% endfor %}
+    <p class="text-xs text-gray-400">{{ field_label('voice_note', 'default_save_action') }}</p>
+  </fieldset>
+
+  <div class="rounded-lg border border-gray-200 p-3 space-y-2">
+    <label class="flex items-start gap-3">
+      <input type="checkbox"
+             name="voice_note.hotkey_enabled"
+             {% if vn.get("hotkey_enabled") %}checked{% endif %}
+             class="mt-1 rounded border-gray-300"
+             hx-post="/helios/settings/hotkey-permission-check"
+             hx-trigger="change"
+             hx-target="#hotkey-permission-result"
+             hx-swap="innerHTML">
+      <input type="hidden" name="__bool__.voice_note.hotkey_enabled" value="1">
+      <span class="text-sm text-gray-800">
+        Enable global hotkey
+        <span class="block text-xs text-gray-400">
+          {{ field_label('voice_note', 'hotkey_enabled') }} — requires Accessibility permission.
+        </span>
+      </span>
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">Hotkey combo</span>
+      <input type="text"
+             name="voice_note.hotkey_combo"
+             value="{{ vn.get('hotkey_combo', 'cmd+option+v') }}"
+             class="mt-1 w-64 rounded-md border-gray-300 text-sm font-mono">
+    </label>
+    <div id="hotkey-permission-result"></div>
+  </div>
+
+  <fieldset class="space-y-2">
+    <legend class="text-xs font-medium text-gray-700">Indicator preferences</legend>
+    <label class="block">
+      <span class="text-xs">Floating pill position</span>
+      <select name="voice_note.indicator.floating_pill_position"
+              class="mt-1 w-48 rounded-md border-gray-300 text-sm">
+        {% set pos = ind.get('floating_pill_position', 'top_right') %}
+        {% for p in ['top_left', 'top_right', 'bottom_left', 'bottom_right'] %}
+        <option value="{{ p }}" {% if p == pos %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" name="voice_note.indicator.show_elapsed_time"
+             {% if ind.get('show_elapsed_time', True) %}checked{% endif %}>
+      <input type="hidden" name="__bool__.voice_note.indicator.show_elapsed_time" value="1">
+      Show elapsed time
+    </label>
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" name="voice_note.indicator.show_audio_level"
+             {% if ind.get('show_audio_level', True) %}checked{% endif %}>
+      <input type="hidden" name="__bool__.voice_note.indicator.show_audio_level" value="1">
+      Show audio level meter
+    </label>
+    <p class="text-xs text-gray-400">
+      Indicator changes apply after the next voice-note session.
+    </p>
+  </fieldset>
+</div>

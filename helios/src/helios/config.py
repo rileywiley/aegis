@@ -78,6 +78,14 @@ class OcrConfig(BaseModel):
     min_text_chars: int = 20
     confidence_threshold: float = 0.5
     thumbnail_confidence_threshold: float = 0.7
+    # When True, OCR frames are gated by the ``meeting_apps`` allowlist
+    # (Teams/Zoom/Webex bundle ids must be frontmost). When False, every
+    # frame passes the gate — the user-initiated override still applies
+    # but is no longer required. Default is False because Teams desktop
+    # minimizes during screen-share which hands frontmost to the shared
+    # app (e.g. Safari) and starves the allowlist. Smarter screen-share-
+    # aware gating is a follow-up.
+    gate_by_allowlist: bool = False
     meeting_apps: list[str] = [
         "com.microsoft.teams2",
         "com.microsoft.teams",

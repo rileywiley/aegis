@@ -1,0 +1,24 @@
+{# Wizard step 1 — HF account creation. #}
+<div class="space-y-3" id="wizard-pane">
+  <h4 class="text-sm font-semibold text-gray-900">Step 1 of 5 — HuggingFace account</h4>
+  <p class="text-xs text-gray-500">
+    Speaker identification uses pyannote.audio models hosted on HuggingFace.
+    Create a free account if you don't have one — the rest of the wizard takes ~3 minutes.
+  </p>
+  <a href="https://huggingface.co/join" target="_blank"
+     class="inline-flex items-center gap-1 rounded-md bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-800 hover:bg-gray-200">
+    Open huggingface.co/join ↗
+  </a>
+  <div class="pt-2">
+    <button type="button"
+            hx-post="/helios/settings/diarization/step1"
+            hx-target="#wizard-pane"
+            hx-swap="outerHTML"
+            class="rounded-md bg-aegis-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aegis-700">
+      Continue
+    </button>
+  </div>
+  {% if state.get("step1_completed") %}
+  <p class="text-xs text-emerald-700">✓ Marked complete from a previous session.</p>
+  {% endif %}
+</div>

@@ -1,0 +1,24 @@
+{# Wizard step 4 — paste + validate token. #}
+<div class="space-y-3" id="wizard-pane">
+  <h4 class="text-sm font-semibold text-gray-900">Step 4 of 5 — Paste and validate token</h4>
+  <p class="text-xs text-gray-500">
+    Paste your HuggingFace token below. We validate it against HF's <code>whoami</code>
+    API and never log the value.
+  </p>
+  <form hx-post="/helios/settings/diarization/validate-token"
+        hx-target="#validate-token-result"
+        hx-swap="innerHTML"
+        class="space-y-2">
+    <label class="block">
+      <span class="text-xs font-medium text-gray-700">HF token</span>
+      <input type="password" name="hf_token"
+             autocomplete="off"
+             class="mt-1 w-full rounded-md border-gray-300 text-sm font-mono">
+    </label>
+    <button type="submit"
+            class="rounded-md bg-aegis-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aegis-700">
+      Validate token
+    </button>
+  </form>
+  <div id="validate-token-result"></div>
+</div>

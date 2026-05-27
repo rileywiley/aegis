@@ -177,6 +177,30 @@
           {% include "components/meetings_today.html" %}
         </div>
       </div>
+
+      <!-- Today's Voice Notes -->
+      {% if todays_voice_notes %}
+      <div class="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div class="flex items-center gap-2">
+            <svg class="h-5 w-5 text-aegis-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M12 18.75a6 6 0 006-6v-1.5a.75.75 0 00-1.5 0v1.5a4.5 4.5 0 01-9 0v-1.5a.75.75 0 00-1.5 0v1.5a6 6 0 006 6zm0 0v3m-3 0h6M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z" />
+            </svg>
+            <h3 class="text-base font-semibold text-gray-900">Today's Voice Notes</h3>
+            <span class="ml-1 inline-flex items-center rounded-full bg-aegis-50 px-2 py-0.5 text-xs font-medium text-aegis-700">
+              {{ todays_voice_notes|length }}
+            </span>
+          </div>
+          <a href="/voice-notes" class="text-xs text-gray-400 hover:text-gray-600 transition-colors">View all</a>
+        </div>
+        <ul class="divide-y divide-gray-100">
+          {% for vn in todays_voice_notes %}
+            {% include "voice_notes/_partials/voice_note_row.html" with context %}
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Right column -->

@@ -12,6 +12,11 @@ def test_route_by_type_meeting():
     assert route_by_type(state) == "extract_meeting"
 
 
+def test_route_by_type_voice_note():
+    state = PipelineState(item_id=1, item_type="voice_note")
+    assert route_by_type(state) == "extract_voice_note"
+
+
 def test_route_by_type_unknown():
     state = PipelineState(item_id=1, item_type="email")
     assert route_by_type(state) == "end"
@@ -80,3 +85,83 @@ async def test_process_meeting_skips_already_extracted():
         result = await process_meeting(1)
 
     assert result is True
+
+
+# ── Voice note pipeline integration (Wave 4L) ──────────────
+
+
+def test_pipeline_includes_voice_note_node():
+    """The compiled graph should include the extract_voice_note node."""
+    graph = build_pipeline()
+    # LangGraph stores nodes on .nodes (a dict-like).
+    node_keys = set(graph.nodes.keys())
+    assert "extract_voice_note" in node_keys
+    assert "extract_meeting" in node_keys
+
+
+async def test_extract_voice_note_node_calls_processor():
+    """extract_voice_note_node delegates to voice_note_extractor.process_voice_note."""
+    from aegis.processing.pipeline import extract_voice_note_node
+
+    state = PipelineState(item_id=42, item_type="voice_note")
+    process_mock = AsyncMock(return_value=True)
+
+    with patch(
+        "aegis.processing.voice_note_extractor.process_voice_note",
+        process_mock,
+    ):
+        result = await extract_voice_note_node(state)
+
+    process_mock.assert_awaited_once_with(42)
+    assert result.get("error") is None
+    assert result.get("extraction_result") == {"_voice_note_done": True}
+
+
+async def test_extract_voice_note_node_records_error_on_failure():
+    """If process_voice_note raises, the node returns {"error": ...}."""
+    from aegis.processing.pipeline import extract_voice_note_node
+
+    state = PipelineState(item_id=7, item_type="voice_note")
+    process_mock = AsyncMock(side_effect=RuntimeError("kaboom"))
+
+    with patch(
+        "aegis.processing.voice_note_extractor.process_voice_note",
+        process_mock,
+    ):
+        result = await extract_voice_note_node(state)
+
+    assert "kaboom" in (result.get("error") or "")
+
+
+async def test_process_pending_voice_notes_delegates_to_extractor():
+    """The pipeline-level scheduler hook delegates to the extractor's runner."""
+    from aegis.processing.pipeline import process_pending_voice_notes
+
+    runner_mock = AsyncMock(return_value=3)
+    with patch(
+        "aegis.processing.voice_note_extractor.process_pending_voice_notes",
+        runner_mock,
+    ):
+        count = await process_pending_voice_notes()
+
+    runner_mock.assert_awaited_once()
+    # The wrapper passes through the limit kwarg.
+    assert runner_mock.await_args.kwargs.get("limit") == 50
+    assert count == 3
+
+
+async def test_process_pending_items_runs_both_runners():
+    """process_pending_items runs meetings + voice notes and returns counts."""
+    from aegis.processing.pipeline import process_pending_items
+
+    with patch(
+        "aegis.processing.pipeline.process_pending_meetings",
+        AsyncMock(return_value=4),
+    ):
+        with patch(
+            "aegis.processing.pipeline.process_pending_voice_notes",
+            AsyncMock(return_value=2),
+        ):
+            counts = await process_pending_items()
+
+    assert counts == {"meetings": 4, "voice_notes": 2}

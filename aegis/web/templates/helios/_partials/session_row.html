@@ -1,0 +1,44 @@
+{# One row in the sessions table. ``s`` is the session dict from the daemon. #}
+{% set status = s.get('status', 'pending') %}
+{% set status_cls = {
+  'captured': 'bg-emerald-50 text-emerald-700',
+  'partial':  'bg-amber-50 text-amber-700',
+  'no_audio': 'bg-gray-100 text-gray-600',
+  'failed':   'bg-red-50 text-red-700',
+}.get(status, 'bg-gray-100 text-gray-600') %}
+<tr class="hover:bg-gray-50 transition-colors cursor-pointer"
+    onclick="window.location='/helios/sessions/{{ s.get('id') }}'">
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-mono">
+    #{{ s.get('id') }}
+  </td>
+  <td class="px-4 py-3 text-sm text-gray-700">
+    {{ s.get('kind', '—') }}
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+    {% if s.get('started_at') %}
+      {{ s.get('started_at') | local_dt }}
+    {% else %}—{% endif %}
+  </td>
+  <td class="px-4 py-3 text-sm text-gray-700 max-w-xs truncate">
+    {% set linked = s.get('linked_meeting') %}
+    {% if linked %}
+      <a href="/meetings/{{ linked.id }}" class="text-aegis-600 hover:underline"
+         onclick="event.stopPropagation()">{{ linked.title or 'Untitled meeting' }}</a>
+    {% else %}<span class="text-gray-400">—</span>{% endif %}
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+    {{ (s.get('duration_seconds') or 0) | int }}s
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-center text-sm">
+    <span class="inline-flex items-center rounded-full {{ status_cls }} px-2 py-0.5 text-xs font-medium">
+      {{ status }}
+    </span>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-center text-sm text-gray-500">
+    {{ s.get('chunk_count', 0) }}
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-center text-sm text-gray-500">
+    {% set cov = s.get('coverage_pct') %}
+    {% if cov is not none %}{{ cov | round(0) | int }}%{% else %}—{% endif %}
+  </td>
+</tr>

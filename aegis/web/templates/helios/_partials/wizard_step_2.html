@@ -1,0 +1,22 @@
+{# Wizard step 2 — token generation instructions. #}
+<div class="space-y-3" id="wizard-pane">
+  <h4 class="text-sm font-semibold text-gray-900">Step 2 of 5 — Generate a token</h4>
+  <p class="text-xs text-gray-500">
+    On the HF tokens page, create a new <strong>read</strong> token named
+    "aegis-helios" (or anything you'll recognize). Copy it to your clipboard —
+    you'll paste it in step 4.
+  </p>
+  <a href="https://huggingface.co/settings/tokens" target="_blank"
+     class="inline-flex items-center gap-1 rounded-md bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-800 hover:bg-gray-200">
+    Open HF tokens settings ↗
+  </a>
+  <div class="pt-2">
+    <button type="button"
+            hx-post="/helios/settings/diarization/step2"
+            hx-target="#wizard-pane"
+            hx-swap="outerHTML"
+            class="rounded-md bg-aegis-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aegis-700">
+      I have my token — Continue
+    </button>
+  </div>
+</div>

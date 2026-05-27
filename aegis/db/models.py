@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -163,7 +164,7 @@ class WorkstreamItem(Base):
         UniqueConstraint("workstream_id", "item_type", "item_id", name="uq_workstream_item"),
         CheckConstraint(
             "item_type IN ('meeting','email','chat_message','action_item',"
-            "'decision','commitment','email_ask','chat_ask')",
+            "'decision','commitment','email_ask','chat_ask','voice_note')",
             name="ck_workstream_items_type",
         ),
         CheckConstraint("linked_by IN ('auto','manual')", name="ck_workstream_items_linked_by"),
@@ -226,6 +227,13 @@ class Meeting(Base):
     transcript_status: Mapped[str | None] = mapped_column(String, default="pending")
     meeting_type: Mapped[str | None] = mapped_column(String, default="virtual")
     is_excluded: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Tri-state Helios per-meeting override (HELIOS_BUILD_PLAN.md L2210-2216).
+    # NULL  → fall back to keyword/manual exclusion logic
+    # TRUE  → always exclude from Helios capture (user explicit opt-out)
+    # FALSE → always include even if keyword exclusion would match
+    helios_exclude: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=None
+    )
     calendar_event_id: Mapped[str | None] = mapped_column(Text, unique=True)
     online_meeting_url: Mapped[str | None] = mapped_column(Text)
     recurring_series_id: Mapped[str | None] = mapped_column(Text)
@@ -276,6 +284,83 @@ class MeetingAttendee(Base):
 
     meeting = relationship("Meeting", back_populates="attendees")
     person = relationship("Person")
+
+
+# ═══════════════════════════════════════════════════════════
+# VOICE NOTES (Helios capture subsystem — HELIOS.md §16.12)
+# ═══════════════════════════════════════════════════════════
+
+
+class VoiceNote(Base):
+    __tablename__ = "voice_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    helios_voice_note_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    helios_session_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(TSTZ, nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(TSTZ, nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    transcript_text: Mapped[str] = mapped_column(Text, nullable=False)
+    transcript_text_edited: Mapped[str | None] = mapped_column(Text)
+    triggered_by: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_device: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="mac", server_default="mac"
+    )
+    is_excerpt: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    excerpt_of_meeting_id: Mapped[int | None] = mapped_column(
+        ForeignKey("meetings.id", ondelete="SET NULL")
+    )
+    processing_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    embedding = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(TSTZ, server_default="now()")
+
+    attachments: Mapped[list["VoiceNoteAttachment"]] = relationship(
+        back_populates="voice_note", cascade="all, delete-orphan"
+    )
+    excerpt_of_meeting = relationship("Meeting", foreign_keys=[excerpt_of_meeting_id])
+
+    __table_args__ = (
+        CheckConstraint(
+            "triggered_by IN ('menu_bar','hotkey','dashboard')",
+            name="ck_voice_notes_triggered_by",
+        ),
+        CheckConstraint(
+            "processing_status IN ('pending','processing','completed','failed')",
+            name="ck_voice_notes_processing_status",
+        ),
+        Index("idx_voice_notes_started_at", "started_at"),
+    )
+
+
+class VoiceNoteAttachment(Base):
+    __tablename__ = "voice_note_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    voice_note_id: Mapped[int] = mapped_column(
+        ForeignKey("voice_notes.id", ondelete="CASCADE"), nullable=False
+    )
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    target_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_suggested: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(TSTZ, server_default="now()")
+
+    voice_note: Mapped["VoiceNote"] = relationship(back_populates="attachments")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "voice_note_id", "target_type", "target_id",
+            name="uq_voice_note_attachments_target",
+        ),
+        CheckConstraint(
+            "target_type IN ('person','workstream','email_ask','chat_ask')",
+            name="ck_voice_note_attachments_target_type",
+        ),
+        Index("idx_vna_target", "target_type", "target_id"),
+    )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -357,6 +442,9 @@ class ActionItem(Base):
     source_meeting_id: Mapped[int | None] = mapped_column(ForeignKey("meetings.id"))
     source_email_id: Mapped[int | None] = mapped_column(ForeignKey("emails.id"))
     source_chat_message_id: Mapped[int | None] = mapped_column(ForeignKey("chat_messages.id", use_alter=True))
+    source_voice_note_id: Mapped[int | None] = mapped_column(
+        ForeignKey("voice_notes.id", ondelete="SET NULL")
+    )
     related_decision_id: Mapped[int | None] = mapped_column(ForeignKey("decisions.id"))
     deadline: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(String, default="open")

@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Voice Note #{{ vn.id }}{% endblock %}
+{% block page_title %}Voice Note{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {% include "components/breadcrumb.html" %}
+
+  <!-- Header card -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div class="flex-1">
+        <h2 class="text-xl font-bold text-gray-900">
+          {{ vn.started_at.astimezone(tz).strftime('%A, %B %-d, %-I:%M %p') }}
+        </h2>
+        <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+          <span>{{ (vn.duration_seconds or 0) | round(0) | int }} seconds</span>
+          <span class="text-gray-300">·</span>
+          <span class="capitalize">{{ vn.triggered_by | replace('_', ' ') }}</span>
+          {% if vn.is_excerpt %}
+          <span class="text-gray-300">·</span>
+          <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+            Excerpt
+            {% if vn.excerpt_of_meeting_id %}
+            of <a class="ml-1 underline" href="/meetings/{{ vn.excerpt_of_meeting_id }}?from=/voice-notes/{{ vn.id }}">meeting</a>
+            {% endif %}
+          </span>
+          {% endif %}
+          <span class="text-gray-300">·</span>
+          <span id="processing-status"
+                hx-get="/voice-notes/{{ vn.id }}/status"
+                hx-trigger="{% if vn.processing_status == 'processing' %}every 2s{% else %}none{% endif %}"
+                hx-swap="outerHTML"
+                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                {% if vn.processing_status == 'completed' %}bg-emerald-50 text-emerald-700
+                {% elif vn.processing_status == 'processing' %}bg-aegis-50 text-aegis-700 animate-pulse
+                {% elif vn.processing_status == 'failed' %}bg-red-50 text-red-700
+                {% else %}bg-gray-100 text-gray-500{% endif %}">
+            {% if vn.processing_status == 'processing' %}Re-extracting…{% else %}{{ vn.processing_status }}{% endif %}
+          </span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button
+          hx-post="/voice-notes/{{ vn.id }}/re-extract"
+          hx-target="#processing-status"
+          hx-swap="outerHTML"
+          class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+          Re-extract
+        </button>
+        <button
+          hx-delete="/api/voice-notes/{{ vn.id }}"
+          hx-confirm="Delete this voice note? This cannot be undone."
+          hx-on::after-request="if(event.detail.xhr.status===204) window.location.href='/voice-notes'"
+          class="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio playback -->
+  {% if audio_chunks %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+    <h3 class="text-sm font-semibold text-gray-900 mb-3">Audio</h3>
+    <ul class="space-y-2">
+      {% for c in audio_chunks %}
+      <li class="flex items-center justify-between gap-3">
+        <div class="text-xs text-gray-500">
+          {{ (c.get('duration_seconds') or 0) | round(1) }}s
+          <span class="ml-2 text-gray-400">{{ c.get('status') }}</span>
+        </div>
+        <audio controls preload="none"
+               src="/helios/sessions/{{ vn.helios_session_id }}/audio/{{ c.get('id') }}"
+               class="h-8 flex-1 max-w-md"></audio>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <!-- Transcript editor -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6"
+       x-data="{ editing: false, dirty: false }">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-gray-900">Transcript</h3>
+      <div class="flex items-center gap-2">
+        {% if vn.transcript_text_edited %}
+        <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">Edited</span>
+        {% endif %}
+        <button @click="editing = !editing" class="text-xs text-aegis-600 hover:text-aegis-700"
+                x-text="editing ? 'Cancel' : 'Edit'"></button>
+      </div>
+    </div>
+
+    <div x-show="!editing">
+      <p class="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+        {{ vn.transcript_text_edited or vn.transcript_text or '(empty transcript)' }}
+      </p>
+      {% if vn.transcript_text_edited and vn.transcript_text and vn.transcript_text_edited != vn.transcript_text %}
+      <details class="mt-3">
+        <summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-700">Show original transcript</summary>
+        <div class="mt-2 rounded-md bg-gray-50 p-3 text-xs text-gray-600 whitespace-pre-wrap">{{ vn.transcript_text }}</div>
+      </details>
+      {% endif %}
+    </div>
+
+    <form x-show="editing"
+          x-cloak
+          hx-patch="/voice-notes/{{ vn.id }}/transcript"
+          hx-target="#processing-status"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful){ editing = false; window.location.reload(); }"
+          class="space-y-3">
+      <textarea name="transcript_text_edited" rows="8"
+                @input="dirty = true"
+                class="w-full rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-900 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500"
+      >{{ vn.transcript_text_edited or vn.transcript_text or '' }}</textarea>
+      <div class="flex items-center gap-2">
+        <button type="submit"
+                class="rounded-md bg-aegis-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-aegis-700">
+          Save &amp; re-extract
+        </button>
+        <button type="button" @click="editing = false; dirty = false"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+          Cancel
+        </button>
+        <p class="text-xs text-gray-400">Saving triggers re-extraction. Old action items and mentions are replaced.</p>
+      </div>
+    </form>
+  </div>
+
+  <!-- Attachments -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+    <h3 class="text-sm font-semibold text-gray-900 mb-3">Attached entities</h3>
+    {% if vn.attachments %}
+    <ul class="space-y-2">
+      {% for att in vn.attachments %}
+      <li class="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
+        <div class="flex items-center gap-3 text-sm">
+          <span class="inline-flex items-center rounded-full bg-aegis-50 px-2 py-0.5 text-[10px] font-medium text-aegis-700">
+            {{ att.target_type }}
+          </span>
+          {% set label = attachment_labels.get((att.target_type, att.target_id)) %}
+          {% if att.target_type == 'person' %}
+          <a href="/people?q={{ label or '' }}" class="text-gray-800 hover:text-aegis-700">{{ label or 'Person #' ~ att.target_id }}</a>
+          {% elif att.target_type == 'workstream' %}
+          <a href="/workstreams/{{ att.target_id }}?from=/voice-notes/{{ vn.id }}" class="text-gray-800 hover:text-aegis-700">{{ label or 'Workstream #' ~ att.target_id }}</a>
+          {% elif att.target_type == 'email_ask' %}
+          <a href="/asks/email/{{ att.target_id }}?from=/voice-notes/{{ vn.id }}" class="text-gray-800 hover:text-aegis-700">{{ label or ('Email ask #' ~ att.target_id) }}</a>
+          {% elif att.target_type == 'chat_ask' %}
+          <a href="/asks/chat/{{ att.target_id }}?from=/voice-notes/{{ vn.id }}" class="text-gray-800 hover:text-aegis-700">{{ label or ('Chat ask #' ~ att.target_id) }}</a>
+          {% endif %}
+          {% if att.is_suggested %}
+          <span class="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Suggested</span>
+          {% endif %}
+        </div>
+        <button
+          hx-patch="/voice-notes/{{ vn.id }}/attachments"
+          hx-vals='{"remove_target_type": "{{ att.target_type }}", "remove_target_id": {{ att.target_id }} }'
+          hx-target="closest li"
+          hx-swap="outerHTML"
+          hx-confirm="Remove this attachment?"
+          class="text-xs text-gray-400 hover:text-red-600">Remove</button>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-400">No attachments yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Linked action items -->
+  {% if linked_action_items %}
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+    <h3 class="text-sm font-semibold text-gray-900 mb-3">Action items from this note</h3>
+    <ul class="space-y-2">
+      {% for ai in linked_action_items %}
+      <li class="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-800">
+        <div class="flex items-center justify-between gap-3">
+          <span>{{ ai.description }}</span>
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium
+            {% if ai.status == 'completed' %}bg-green-50 text-green-700
+            {% elif ai.status == 'in_progress' %}bg-aegis-50 text-aegis-700
+            {% elif ai.status == 'stale' %}bg-red-50 text-red-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">{{ ai.status }}</span>
+        </div>
+        {% if ai.deadline %}
+        <p class="mt-1 text-xs text-gray-500">Due: {{ ai.deadline }}</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

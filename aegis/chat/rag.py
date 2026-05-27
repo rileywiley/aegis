@@ -30,7 +30,9 @@ from aegis.processing.embeddings import embed_text
 logger = logging.getLogger(__name__)
 
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
-SONNET_MODEL = "claude-haiku-4-5-20251001"
+# Sonnet 4.6 for user-facing responses per CLAUDE.md §7. Previously
+# copy-pasted as haiku (Warning #3, Wave 4 review).
+SONNET_MODEL = "claude-sonnet-4-6"
 
 INTENT_SYSTEM = """You classify user questions about workplace data into one of three categories.
 
@@ -213,12 +215,23 @@ async def _run_structured_query(session: AsyncSession, question: str, entities: 
 
 
 async def _semantic_search(
-    session: AsyncSession, question: str, limit: int = 15
+    session: AsyncSession,
+    question: str,
+    limit: int = 15,
+    *,
+    filter_person_id: int | None = None,
+    filter_workstream_id: int | None = None,
 ) -> list[dict]:
-    """Vector similarity search across meetings, emails, and chat messages.
+    """Vector similarity search across meetings, emails, chat, voice notes.
 
-    Ranking: similarity * 0.5 + recency * 0.2 + triage_weight * 0.3
+    Ranking: similarity * 0.4 + recency * 0.3 + triage_weight * 0.3
     Only searches substantive + contextual items (excludes noise).
+
+    Voice notes are always treated as user-spoken substantive content
+    (triage_weight = 1.0). When ``filter_person_id`` or
+    ``filter_workstream_id`` is set, voice notes are filtered to only
+    those attached to the target via ``voice_note_attachments`` so chat
+    answers about "what did I say about <person>?" stay scoped.
     """
     query_embedding = await embed_text(question)
     embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
@@ -266,10 +279,66 @@ async def _semantic_search(
         LIMIT :limit
     """)
 
-    params = {"query_embedding": embedding_str, "limit": limit}
+    # Search voice notes. The label is a 60-char snippet from whichever
+    # transcript is current (edited preferred, original fallback). When
+    # filtering by person/workstream we join through
+    # voice_note_attachments and accept the wider similarity scan that
+    # follows. Voice notes always have triage_weight=1.0 because the
+    # user explicitly recorded them.
+    vn_join = ""
+    vn_filter = ""
+    if filter_person_id is not None:
+        vn_join = (
+            "JOIN voice_note_attachments vna "
+            "ON vna.voice_note_id = voice_notes.id "
+        )
+        vn_filter = (
+            "AND vna.target_type = 'person' "
+            "AND vna.target_id = :filter_person_id "
+        )
+    elif filter_workstream_id is not None:
+        vn_join = (
+            "JOIN voice_note_attachments vna "
+            "ON vna.voice_note_id = voice_notes.id "
+        )
+        vn_filter = (
+            "AND vna.target_type = 'workstream' "
+            "AND vna.target_id = :filter_workstream_id "
+        )
+    # Postgres requires every ORDER BY expression to appear in the
+    # SELECT list when SELECT DISTINCT is used — the distance operator
+    # would otherwise raise InvalidColumnReferenceError and the query
+    # would silently fail (try/except below rolls back), starving the
+    # search of voice notes entirely. Solution: ORDER BY the explicit
+    # similarity alias instead of the raw distance.
+    voice_note_sql = text(
+        f"""
+        SELECT DISTINCT voice_notes.id,
+               LEFT(COALESCE(transcript_text_edited, transcript_text, ''), 60) AS label,
+               COALESCE(transcript_text_edited, transcript_text, '') AS content,
+               started_at AS dt,
+               'voice_note' AS source_type,
+               1 - (voice_notes.embedding <=> CAST(:query_embedding AS vector)) AS similarity,
+               1.3 AS triage_weight
+        FROM voice_notes
+        {vn_join}
+        WHERE voice_notes.embedding IS NOT NULL
+          AND voice_notes.processing_status = 'completed'
+          {vn_filter}
+        ORDER BY similarity DESC
+        LIMIT :limit
+        """
+    )
+
+    params: dict[str, Any] = {"query_embedding": embedding_str, "limit": limit}
+    if filter_person_id is not None:
+        params["filter_person_id"] = filter_person_id
+    if filter_workstream_id is not None:
+        params["filter_workstream_id"] = filter_workstream_id
+
     all_results: list[dict] = []
 
-    for sql in [meeting_sql, email_sql, chat_sql]:
+    for sql in [meeting_sql, email_sql, chat_sql, voice_note_sql]:
         try:
             result = await session.execute(sql, params)
             for row in result.mappings().all():
@@ -320,14 +389,24 @@ async def _generate_answer(
         elif isinstance(dt, str) and "T" in dt:
             dt = dt[:16].replace("T", " ")
 
+        # All sources cite as positional ``[N]`` — the model's only
+        # citation instruction is "cite via [N]". Voice notes get a
+        # distinctive display label in the sources panel rather than a
+        # bespoke citation token (which the model would not actually
+        # emit, per Warning #2 in the Wave 4 review).
         source_ref = f"[{i+1}]"
+        if source_type == "voice_note":
+            display_label = f"Voice Note: {label}"
+        else:
+            display_label = str(label)
+
         context_parts.append(
-            f"{source_ref} ({source_type}) {label} ({dt})\n{str(content)[:1000]}"
+            f"{source_ref} ({source_type}) {display_label} ({dt})\n{str(content)[:1000]}"
         )
         sources.append({
             "ref": source_ref,
             "source_type": source_type,
-            "label": str(label),
+            "label": display_label,
             "id": item_id,
             "url": _build_source_url(source_type, item_id),
         })
@@ -379,6 +458,8 @@ def _build_source_url(source_type: str, item_id: int | None) -> str | None:
         return f"/emails/{item_id}"
     elif source_type == "chat_message":
         return None  # No dedicated chat message page
+    elif source_type == "voice_note":
+        return f"/voice-notes/{item_id}"
     elif source_type == "action_item":
         return f"/actions?highlight={item_id}"
     elif source_type == "decision":
@@ -407,8 +488,15 @@ async def ask_aegis(
     session: AsyncSession,
     question: str,
     session_id: int | None = None,
+    *,
+    filter_person_id: int | None = None,
+    filter_workstream_id: int | None = None,
 ) -> dict:
     """Main RAG entry point.
+
+    ``filter_person_id`` / ``filter_workstream_id`` scope voice-note
+    retrieval to attachments targeting that entity. Other corpora are
+    not filtered (the answer LLM is left to weigh relevance).
 
     Returns: {answer: str, sources: list[dict], session_id: int}
     """
@@ -426,10 +514,21 @@ async def ask_aegis(
     if intent == "structured":
         context = await _run_structured_query(session, question, entities)
     elif intent == "semantic":
-        context = await _semantic_search(session, question)
+        context = await _semantic_search(
+            session,
+            question,
+            filter_person_id=filter_person_id,
+            filter_workstream_id=filter_workstream_id,
+        )
     else:  # hybrid
         structured = await _run_structured_query(session, question, entities)
-        semantic = await _semantic_search(session, question, limit=10)
+        semantic = await _semantic_search(
+            session,
+            question,
+            limit=10,
+            filter_person_id=filter_person_id,
+            filter_workstream_id=filter_workstream_id,
+        )
         context = structured + semantic
 
     # Step 3: Generate answer with Sonnet

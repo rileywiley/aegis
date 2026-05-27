@@ -602,7 +602,8 @@ async def test_session_transcript_404(replay_env):
             assert resp.status_code == 404
 
 
-async def test_re_transcribe_returns_202(replay_env):
+async def test_re_transcribe_returns_200_with_count(replay_env):
+    """Wave 6D made re-transcribe synchronous + concrete (chunks_requeued)."""
     app = create_app()
     async with _LifespanContext(app):
         async with await _client(app) as client:
@@ -617,13 +618,15 @@ async def test_re_transcribe_returns_202(replay_env):
             resp = await client.post(
                 f"/v1/sessions/{sid}/re-transcribe", headers=_AUTH
             )
-            assert resp.status_code == 202
+            assert resp.status_code == 200, resp.text
             body = resp.json()
-            assert body["status"] == "queued"
             assert body["session_id"] == sid
+            assert "chunks_requeued" in body
+            assert body["chunks_requeued"] >= 0
 
 
-async def test_re_diarize_returns_202(replay_env):
+async def test_re_diarize_returns_200_with_count(replay_env):
+    """Wave 6D made re-diarize synchronous + concrete (jobs_requeued)."""
     app = create_app()
     async with _LifespanContext(app):
         async with await _client(app) as client:
@@ -638,8 +641,10 @@ async def test_re_diarize_returns_202(replay_env):
             resp = await client.post(
                 f"/v1/sessions/{sid}/re-diarize", headers=_AUTH
             )
-            assert resp.status_code == 202
-            assert resp.json()["status"] == "queued"
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["session_id"] == sid
+            assert "jobs_requeued" in body
 
 
 async def test_delete_session_200_then_404(replay_env):
@@ -753,23 +758,84 @@ async def test_ocr_placeholder(replay_env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "path,body",
-    [
-        ("/v1/diagnostics/restart", None),
-        ("/v1/diagnostics/flush-queues", None),
-        ("/v1/diagnostics/test-capture", None),
-        ("/v1/diagnostics/reload-component", {"component": "transcription"}),
-    ],
-)
-async def test_diagnostics_actions_return_202(replay_env, path, body):
+async def test_diagnostics_restart_202_with_sigterm_suppressed(replay_env):
+    """Wave 6D: restart returns 202; SIGTERM gated behind a test flag."""
+    app = create_app()
+    async with _LifespanContext(app):
+        app.state.suppress_restart_sigterm = True
+        async with await _client(app) as client:
+            resp = await client.post(
+                "/v1/diagnostics/restart", headers=_AUTH
+            )
+            assert resp.status_code == 202, resp.text
+            assert resp.json()["status"] == "queued"
+            assert app.state.restart_calls == 1
+
+
+async def test_diagnostics_flush_queues_returns_counts(replay_env):
+    """Wave 6D: flush-queues returns synchronous {tx, diar} counts."""
     app = create_app()
     async with _LifespanContext(app):
         async with await _client(app) as client:
-            resp = await client.post(path, json=body, headers=_AUTH)
+            resp = await client.post(
+                "/v1/diagnostics/flush-queues", headers=_AUTH
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert "transcription_flushed" in body
+            assert "diarization_flushed" in body
+
+
+async def test_diagnostics_test_capture_returns_job_id(replay_env):
+    """Wave 6D: test-capture queues a job and returns a job_id.
+
+    Dials the self-test capture window down to near-zero so the
+    background task settles before the lifespan tears down.
+    """
+    app = create_app()
+    async with _LifespanContext(app):
+        # Short-circuit the capture window + transcribe timeout so the
+        # bg task finishes before the lifespan stops the orchestrator.
+        app.state.self_test_capture_seconds = 0.05
+        app.state.self_test_transcribe_timeout_seconds = 0.5
+        async with await _client(app) as client:
+            resp = await client.post(
+                "/v1/diagnostics/test-capture", headers=_AUTH
+            )
             assert resp.status_code == 202, resp.text
-            envelope = resp.json()
-            assert envelope["status"] == "queued"
+            body = resp.json()
+            assert body["status"] == "queued"
+            assert body["job_id"].startswith("selftest-")
+            job_id = body["job_id"]
+            # Poll the status endpoint until the job lands. Bound the
+            # wait so a regression doesn't hang the suite.
+            for _ in range(60):
+                await asyncio.sleep(0.1)
+                status_resp = await client.get(
+                    f"/v1/diagnostics/test-capture/{job_id}", headers=_AUTH
+                )
+                if status_resp.json()["status"] in (
+                    "complete", "failed"
+                ):
+                    break
+            else:
+                raise AssertionError("self-test job never completed")
+
+
+async def test_diagnostics_reload_component_returns_ok(replay_env):
+    """Wave 6D: reload-component returns sync {component, ok, detail}."""
+    app = create_app()
+    async with _LifespanContext(app):
+        async with await _client(app) as client:
+            resp = await client.post(
+                "/v1/diagnostics/reload-component",
+                json={"component": "transcription"},
+                headers=_AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["component"] == "transcription"
+            assert "ok" in body
 
 
 async def test_reload_component_validation(replay_env):

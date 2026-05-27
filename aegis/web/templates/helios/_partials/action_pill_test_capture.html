@@ -1,0 +1,53 @@
+{# Test-capture pill with optional polling + step list.
+
+   Inputs:
+     job_id  : the daemon job id
+     status  : 'queued' | 'running' | 'complete' | 'failed' | None (unreachable)
+     steps   : list of {name, ok, detail}
+     session_id : optional, present on complete
+
+   When status is queued/running the wrapper triggers an HTMX poll every
+   2s. When the status is terminal (complete / failed) the polling
+   trigger is left off so HTMX stops.
+#}
+{% if status is none %}
+  <span class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+    Daemon unreachable
+  </span>
+{% else %}
+  {% set is_running = status in ('queued', 'running') %}
+  {% set is_failed  = status == 'failed' %}
+  {% set is_done    = status == 'complete' %}
+  {% set cls = (
+        'bg-aegis-50 text-aegis-700 animate-pulse' if is_running
+        else ('bg-emerald-50 text-emerald-700' if is_done
+        else ('bg-red-50 text-red-700' if is_failed
+        else 'bg-amber-50 text-amber-700'))) %}
+  <div id="test-capture-pill"
+       {% if is_running %}hx-get="/helios/diagnostics/test-capture/{{ job_id }}"
+       hx-trigger="load delay:2s"
+       hx-swap="outerHTML"
+       {% endif %}>
+    <span class="inline-flex items-center gap-1 rounded-full {{ cls }} px-2 py-1 text-xs font-medium">
+      Test capture: {{ status }}
+      {% if session_id %}<span class="ml-1 text-gray-500">(session #{{ session_id }})</span>{% endif %}
+    </span>
+    {% if steps %}
+      <ul class="mt-2 space-y-1 text-xs">
+        {% for step in steps %}
+          <li class="flex items-start gap-2">
+            {% if step.ok %}
+              <span class="text-emerald-600">✓</span>
+            {% else %}
+              <span class="text-red-600">✗</span>
+            {% endif %}
+            <span class="font-medium text-gray-700">{{ step.name }}</span>
+            {% if step.detail %}
+              <span class="text-gray-500">— {{ step.detail }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endif %}

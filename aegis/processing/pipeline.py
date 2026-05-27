@@ -1,7 +1,14 @@
 """Processing pipeline — LangGraph-based extraction workflow.
 
 Flow: classify → [branch by source] → extract → resolve → store
-Phase 2 wires up meeting extraction only. Email/chat added in Phase 3.
+Phase 2 wires up meeting extraction. Phase 3 (Wave 4L) adds voice notes.
+Email/chat run through their own pollers + extractors today.
+
+Voice notes diverge from the meeting flow: they own their resolve+store
+inside ``voice_note_extractor.process_voice_note`` because the
+attachment-merge step needs to coordinate with user-confirmed rows in a
+single transaction. The graph still routes voice notes through a
+dedicated node so the dispatcher pattern stays consistent.
 """
 
 import logging
@@ -23,7 +30,7 @@ class PipelineState(BaseModel):
     """State passed through the pipeline graph."""
 
     item_id: int
-    item_type: str  # "meeting", "email", "chat_message"
+    item_type: str  # "meeting", "email", "chat_message", "voice_note"
     transcript_text: str = ""
     attendee_names: list[str] = []
     extraction_result: dict[str, Any] | None = None
@@ -100,11 +107,34 @@ async def store_node(state: PipelineState) -> dict:
         return {"error": str(e)}
 
 
+async def extract_voice_note_node(state: PipelineState) -> dict:
+    """Run the full voice-note extraction pipeline.
+
+    Voice notes own resolve + store inside
+    ``voice_note_extractor.process_voice_note`` (the merge with
+    user-confirmed attachments must happen atomically), so this node
+    short-circuits the resolve/store chain by setting
+    ``extraction_result`` to a sentinel and routing directly to END.
+    """
+    from aegis.processing.voice_note_extractor import process_voice_note
+
+    try:
+        await process_voice_note(state.item_id)
+        return {"extraction_result": {"_voice_note_done": True}}
+    except Exception as e:
+        logger.exception(
+            "Voice note extraction failed for voice_note %d", state.item_id
+        )
+        return {"error": str(e)}
+
+
 def route_by_type(state: PipelineState) -> str:
     """Branch to the correct extractor based on item_type."""
     if state.item_type == "meeting":
         return "extract_meeting"
-    # Phase 3: email, chat_message
+    if state.item_type == "voice_note":
+        return "extract_voice_note"
+    # Email + chat_message run through dedicated pollers, not this graph.
     return "end"
 
 
@@ -117,17 +147,21 @@ def build_pipeline() -> StateGraph:
 
     graph.add_node("classify", classify_node)
     graph.add_node("extract_meeting", extract_meeting_node)
+    graph.add_node("extract_voice_note", extract_voice_note_node)
     graph.add_node("resolve", resolve_node)
     graph.add_node("store", store_node)
 
     graph.set_entry_point("classify")
     graph.add_conditional_edges("classify", route_by_type, {
         "extract_meeting": "extract_meeting",
+        "extract_voice_note": "extract_voice_note",
         "end": END,
     })
     graph.add_edge("extract_meeting", "resolve")
     graph.add_edge("resolve", "store")
     graph.add_edge("store", END)
+    # Voice notes self-contain resolve+store, so route directly to END.
+    graph.add_edge("extract_voice_note", END)
 
     return graph
 
@@ -252,3 +286,27 @@ async def process_pending_meetings() -> int:
 
     logger.info("Processed %d/%d pending meetings", count, len(meeting_ids))
     return count
+
+
+async def process_pending_voice_notes(limit: int = 50) -> int:
+    """Find and process all voice notes with ``processing_status='pending'``.
+
+    Thin wrapper around the runner in ``voice_note_extractor`` so the
+    pipeline scheduler exposes a single, symmetric surface
+    (``process_pending_meetings`` / ``process_pending_voice_notes``).
+    Voice notes are processed independently of meetings — their
+    transcripts arrive at creation time, so there's no
+    ``transcript_status`` gating.
+    """
+    from aegis.processing.voice_note_extractor import (
+        process_pending_voice_notes as _runner,
+    )
+
+    return await _runner(limit=limit)
+
+
+async def process_pending_items() -> dict[str, int]:
+    """Run all pending-item runners in sequence. Returns counts per type."""
+    meetings = await process_pending_meetings()
+    voice_notes = await process_pending_voice_notes()
+    return {"meetings": meetings, "voice_notes": voice_notes}

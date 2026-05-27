@@ -268,6 +268,11 @@ async def workstream_detail(
 
     tz = _local_tz()
 
+    # Voice notes attached to this workstream
+    from aegis.db.voice_notes_repository import VoiceNotesRepository
+    voice_notes_repo = VoiceNotesRepository(session)
+    voice_notes = await voice_notes_repo.list_for_workstream(workstream_id, limit=20)
+
     return templates.TemplateResponse(
         request,
         "workstream_detail.html",
@@ -279,6 +284,7 @@ async def workstream_detail(
             "stakeholders": stakeholders,
             "milestones": milestones,
             "owner_name": owner_name,
+            "voice_notes": voice_notes,
             "back_url": back_url,
             "back_label": back_label,
             "status_options": _STATUS_OPTIONS,

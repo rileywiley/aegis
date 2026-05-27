@@ -110,6 +110,36 @@ def test_empty_allowlist_only_allows_during_override():
     )
 
 
+def test_gate_by_allowlist_false_passes_everything():
+    """With gate_by_allowlist=False the gate is always open."""
+    # Foreign frontmost, no override, empty allowlist — still passes.
+    assert gate_allows_frame(
+        now_ts=100.0,
+        frontmost_bundle="com.apple.Safari",
+        allowlist=[],
+        screen_capture_override_until=None,
+        gate_by_allowlist=False,
+    )
+    # Even with frontmost=None we pass when gating is disabled.
+    assert gate_allows_frame(
+        now_ts=100.0,
+        frontmost_bundle=None,
+        allowlist=_ALLOW,
+        screen_capture_override_until=None,
+        gate_by_allowlist=False,
+    )
+
+
+def test_gate_by_allowlist_default_is_strict():
+    """Omitting the flag keeps the historical strict-allowlist behavior."""
+    assert not gate_allows_frame(
+        now_ts=100.0,
+        frontmost_bundle="com.apple.Safari",
+        allowlist=_ALLOW,
+        screen_capture_override_until=None,
+    )
+
+
 # ---------------------------------------------------------------------------
 # compute_phash + hamming_distance
 # ---------------------------------------------------------------------------

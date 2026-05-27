@@ -1,0 +1,33 @@
+
+## §12.7 smoke deferrals (2026-05-26)
+
+Non-blocking bugs surfaced during the Phase 6 dashboard smoke. Address after smoke completes, before PHASE_6_CHECKPOINT.md.
+
+- [x] **Helios session detail — transcript tab times** (FIXED 2026-05-27). `_partials/transcript_segment.html` now reads `session_start_ts` from context and renders absolute clock time via the `local_dt` filter when present, falling back to relative seconds otherwise. `session_detail.html` passes `started_at` from the transcript/session payload.
+- [x] **Helios session detail — speaker names not resolving** (FIXED 2026-05-27). Added a time-window overlap fallback in `aegis/web/routes/helios.py:helios_session_detail` mirroring the sessions-list enrichment. When the daemon's `SessionResponse` lacks `linked_calendar_event_ids`, the route looks up Aegis meetings whose start/end window overlaps the session and picks the largest-overlap match.
+
+- [x] **Helios settings — exclusion-keyword chip add-button doesn't add to form** (FIXED 2026-05-27). Replaced the inline `innerHTML`-quoting JS with an Alpine.js component in `_partials/settings_section_exclusion.html`. Items live in reactive state and re-render hidden `<input name="exclusion.keywords[]">` elements automatically. Applied the same pattern to `_partials/settings_section_ocr.html` for the OCR `meeting_apps` allowlist.
+
+- [x] **Helios settings — hotkey toggle persists ON without Accessibility grant** (FIXED 2026-05-27). Two-layer guard:
+  1. `settings_hotkey_permission.html` now force-unchecks the checkbox client-side when AX is not granted (gives immediate feedback).
+  2. The settings POST handler in `aegis/web/routes/helios.py` drops `voice_note.hotkey_enabled=true` from the form payload when the toggle is going from False→True and `check_accessibility_granted()` returns False. Surfaces an amber warning banner ("Hotkey not enabled — grant Accessibility…") via the new `warning` status path in `_partials/save_banner.html`. Existing TOML value remains unchanged.
+
+- [x] **Helios settings — HF wizard wrote token to wrong keychain location** (FIXED 2026-05-27). `store_hf_token_in_keychain` in `aegis/web/routes/_helios_settings_helpers.py:557` wrote to `service="aegis-helios", account="hf_token"` but the daemon (`helios/keychain.py:23-24`) reads from `service="helios", account="huggingface"`. Diarization silently stayed `token_missing` after a "successful" wizard run. Fixed by aligning the wizard's write keys with the daemon's read keys. Mirrored existing tokens during the smoke run.
+
+- [x] **Helios daemon — `/v1/status` `components` field stale vs `/v1/diagnostics` `component_status`** (FIXED 2026-05-27). `helios/api/routes/status.py:_components_view` now reads the most recent rows from the `component_status` table via `queries.get_recent_component_status`, falling back to `_DEFAULT_COMPONENTS` only when the lookup errors. Same source `/v1/diagnostics` uses, so the overview indicators stay in sync. Requires Helios rebuild + reinstall to land.
+
+- [x] **Helios wizard — step 5 success screen had no exit button** (FIXED 2026-05-27, follow-up: persistence verification). Wizard's `wizard_step_5_result.html` was a leaf partial with no way back to the settings page — UI looked "stuck" after success. Added a "Done" button linking back to `/helios/settings`. Open question: under what conditions did the user's earlier wizard run end with `step5_completed` NOT persisted to TOML despite the success render? Possible race in `_wizard_save_state` or in `wizard_download_models` flow when reload_component returns a payload but step5_completed write doesn't fire — needs another walkthrough to reproduce.
+
+- [x] **Helios wizard — settings page re-prompts step 5 even after `step5_completed=true`** (FIXED 2026-05-27). `settings.html` initial_step logic only checked steps 1-4, so step 5 was the perpetual landing once step 4 was done. Added a completed-state block + a `POST /helios/settings/diarization/reset` endpoint to re-run the flow if needed.
+
+- [x] **Voice note resolver — over-attaching 100-250 people per 60s transcript** (FIXED 2026-05-27, partial). `aegis/processing/resolver.py` used `partial_ratio` against short first names (Tom, Al, Ed, Sue, Lee). partial_ratio returns 100 for any substring alignment, so "Tom" matched "tomorrow"/"atom"/"custom" tokens. Fixed by gating short candidates (≤ 5 chars) behind a literal word-boundary token-set match. Existing 1119 spurious suggested attachments cleared via DELETE. Better long-term fix: spaCy/NER for name extraction before resolver runs.
+
+- [x] **Voice notes list — date column missing** (FIXED 2026-05-27). The `voice_note_row.html` partial only showed time of day. Added a `show_date` flag (default false to preserve dashboard/profile uses). The list page passes `show_date=true` so the leading column now reads "May 26, 10:32 AM" instead of just "10:32 AM".
+
+- [x] **Voice note detail — no audio player** (FIXED 2026-05-27). Track 6E shipped the page without rendering audio. Detail handler now fetches mic-channel audio chunks from the linked Helios session via `HeliosClient.list_audio`, and the template renders one inline `<audio>` per chunk, routed through Aegis's `/helios/sessions/{sid}/audio/{cid}` proxy. System-channel chunks are dropped (voice notes are user-spoken).
+
+- [x] **Voice notes — not a source option on asks list filter** (FIXED 2026-05-27). Added "Voice notes" to the source dropdown in `asks.html` and wired `source=voice_note` in `get_all_asks` to filter both EmailAsk and ChatAsk to ids present in `voice_note_attachments` under `target_type='email_ask'`/`'chat_ask'` (Wave 4 migration `7a91f44b2c10`).
+
+- [x] **RAG — voice notes silently dropped from semantic search** (FIXED 2026-05-27). `aegis/chat/rag.py` voice-note SQL used `SELECT DISTINCT ... ORDER BY embedding <=> :q` which Postgres rejects ("ORDER BY expressions must appear in SELECT list" for DISTINCT queries). The try/except + rollback silently swallowed it, so every RAG query returned zero voice notes for months without trace logs. Fixed by ORDER BY'ing the explicit `similarity DESC` alias instead. Verified VN #7 now flows into results.
+
+- [x] **RAG — voice note composite score lags emails/chats** (FIXED 2026-05-27). Bumped voice_note triage_weight from 1.0 → 1.3 in `_semantic_search`. Voice notes are user-spoken so they should be preferred; the boost is enough to surface a relevant VN in the top-15 even when an email/chat scores marginally higher on raw embedding similarity. Verified with the "Marisol" query — VN #7 + VN #8 now lead the result list.

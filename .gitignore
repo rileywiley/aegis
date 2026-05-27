@@ -7,9 +7,13 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+*.egg-info/
+.coverage
+build/
 
 # IDE
 .idea/
+.claude/
 
 # Project
 bug_report.md

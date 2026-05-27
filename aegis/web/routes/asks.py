@@ -72,7 +72,7 @@ async def asks_list(
     status: str = Query("", description="Filter by status"),
     urgency: str = Query("", description="Filter by urgency"),
     ask_type: str = Query("", description="Filter by ask type"),
-    source: str = Query("", description="Filter by source: all, email, chat"),
+    source: str = Query("", description="Filter by source: all, email, chat, voice_note"),
     scope: str = Query("", description="Filter by scope: all, internal, external"),
     page: int = Query(1, ge=1),
     session: AsyncSession = Depends(get_session),
@@ -273,10 +273,21 @@ async def ask_detail(
         person_ids.add(ask["target_id"])
     person_map = await get_persons_by_ids(session, list(person_ids)) if person_ids else {}
 
+    # Voice notes attached to this ask. Critical #4: email_ask and
+    # chat_ask are separate target_types because the numeric ids can
+    # collide across email_asks and chat_asks. Pass the source so the
+    # repo queries the right side.
+    from aegis.db.voice_notes_repository import VoiceNotesRepository
+    vn_repo = VoiceNotesRepository(session)
+    voice_notes = await vn_repo.list_for_ask(
+        ask_id, source=source_type, limit=20
+    )
+
     return templates.TemplateResponse(
         request,
         "ask_detail.html",
         {
+            "voice_notes": voice_notes,
             "ask": ask,
             "source_item": source_item,
             "surrounding_messages": surrounding_messages,

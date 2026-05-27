@@ -1,16 +1,20 @@
 """Aegis — AI Chief of Staff. FastAPI application entry point."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from aegis.clients.helios import HeliosClient
 from aegis.config import get_settings
 from aegis.db.engine import async_session_factory, engine
 from aegis.db.repositories import reset_stuck_processing
+from aegis.ingestion.helios_heartbeat import helios_heartbeat_loop
 
 logger = logging.getLogger("aegis")
 
@@ -25,16 +29,22 @@ _LOG_BACKUP_COUNT = 5
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-async def _run_processing_cycle() -> None:
+async def _run_processing_cycle(helios_client: HeliosClient | None = None) -> None:
     """30-minute processing cycle: triage → extraction → workstream assignment.
 
     Must run sequentially — each step depends on the previous one's output.
+    ``helios_client`` is passed via APScheduler args so we can build pending
+    transcripts before the extraction step runs.
     """
     from datetime import datetime, timedelta, timezone
 
     from aegis.processing.triage import triage_batch, apply_triage_results
-    from aegis.processing.pipeline import process_pending_meetings
+    from aegis.processing.pipeline import (
+        process_pending_meetings,
+        process_pending_voice_notes,
+    )
     from aegis.processing.workstream_detector import run_workstream_assignment
+    from aegis.ingestion.meeting_detector import MeetingDetector
 
     try:
         # Step 1: Triage new emails + chat messages
@@ -72,10 +82,33 @@ async def _run_processing_cycle() -> None:
                     await apply_triage_results(session, results, "chat_message")
                 logger.info("Triage: classified %d chat messages", len(results))
 
+        # Step 1b: Build transcripts for any completed meetings whose audio
+        # Helios has captured but Aegis hasn't ingested yet. Must run BEFORE
+        # extraction so freshly-built transcripts get picked up in the same
+        # cycle.
+        if helios_client is not None:
+            async with async_session_factory() as session:
+                try:
+                    detector = MeetingDetector(helios_client)
+                    built = await detector.process_completed_meetings(session)
+                    if built:
+                        logger.info("Transcript builder: built %d transcripts", built)
+                except Exception:
+                    logger.exception("Transcript builder failed")
+                    await session.rollback()
+
         # Step 2: Run extraction pipeline on pending meetings
         count = await process_pending_meetings()
         if count:
             logger.info("Extraction: processed %d meetings", count)
+
+        # Step 2a: Run extraction pipeline on pending voice notes
+        try:
+            vn_count = await process_pending_voice_notes()
+            if vn_count:
+                logger.info("Extraction: processed %d voice notes", vn_count)
+        except Exception:
+            logger.exception("Voice note extraction failed")
 
         # Step 2b: Extract substantive emails
         from aegis.processing.email_extractor import extract_email, store_email_extraction
@@ -331,6 +364,45 @@ async def lifespan(app: FastAPI):
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from aegis.ingestion.poller import start_polling, stop_polling
 
+    # Helios capture daemon client + heartbeat (HELIOS.md §16.9).
+    # The httpx.AsyncClient is owned by the lifespan; HeliosClient
+    # does NOT close it, so we tear it down explicitly on shutdown.
+    helios_http = httpx.AsyncClient()
+    helios_client = HeliosClient(
+        base_url=settings.helios_url,
+        token_path=settings.helios_token_path,
+        http=helios_http,
+        timeout_seconds=float(settings.helios_heartbeat_timeout_seconds),
+    )
+    app.state.helios_client = helios_client
+    app.state.helios_http = helios_http
+
+    # Resolve the macOS notifier eagerly so non-macOS hosts (CI, Linux
+    # remotes) don't crash on the first ``healthy → down`` edge — which
+    # would otherwise be the worst possible time to discover a broken
+    # notifier. On ImportError fall back to a no-op that just logs.
+    try:
+        from aegis.notifications.macos import notify as _helios_notifier
+    except ImportError as exc:  # pragma: no cover — exercised on non-mac
+        logger.warning(
+            "helios_notifier_unavailable",
+            extra={"error": str(exc)},
+        )
+
+        async def _helios_notifier(_title: str, _message: str) -> None:
+            # No-op fallback: not a macOS host, nothing to do.
+            return None
+
+    helios_heartbeat_task = asyncio.create_task(
+        helios_heartbeat_loop(
+            helios_client,
+            async_session_factory,
+            settings,
+            notifier=_helios_notifier,
+        )
+    )
+    app.state.helios_heartbeat_task = helios_heartbeat_task
+
     # Start data pollers (calendar, email, Teams)
     await start_polling()
 
@@ -342,6 +414,7 @@ async def lifespan(app: FastAPI):
         seconds=1800,
         id="processing_cycle",
         replace_existing=True,
+        args=[helios_client],
     )
 
     # Dashboard cache refresh every 15 min
@@ -385,6 +458,18 @@ async def lifespan(app: FastAPI):
     logger.info("Aegis shutting down")
     scheduler.shutdown(wait=False)
     await stop_polling()
+
+    # Cancel + drain the Helios heartbeat loop, then close its httpx client.
+    helios_heartbeat_task.cancel()
+    try:
+        await helios_heartbeat_task
+    except (asyncio.CancelledError, Exception):
+        pass
+    try:
+        await helios_http.aclose()
+    except Exception:
+        logger.debug("helios_http_close_failed", exc_info=True)
+
     await engine.dispose()
 
 
@@ -411,6 +496,9 @@ from aegis.web.routes.chat import router as chat_router  # noqa: E402
 from aegis.web.routes.admin import router as admin_router  # noqa: E402
 from aegis.web.routes.search import router as search_router  # noqa: E402
 from aegis.web.routes.stubs import router as stubs_router  # noqa: E402
+from aegis.web.routes.api import router as api_router  # noqa: E402
+from aegis.web.routes.voice_notes import router as voice_notes_router  # noqa: E402
+from aegis.web.routes.helios import router as helios_router  # noqa: E402
 
 app.include_router(dashboard_router)
 app.include_router(meetings_router)
@@ -428,3 +516,6 @@ app.include_router(chat_router)
 app.include_router(admin_router)
 app.include_router(search_router)
 app.include_router(stubs_router)
+app.include_router(api_router)
+app.include_router(voice_notes_router)
+app.include_router(helios_router)

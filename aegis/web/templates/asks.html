@@ -61,6 +61,7 @@
       <option value="">All Sources</option>
       <option value="email" {% if source == 'email' %}selected{% endif %}>Email</option>
       <option value="chat" {% if source == 'chat' %}selected{% endif %}>Chat</option>
+      <option value="voice_note" {% if source == 'voice_note' %}selected{% endif %}>Voice notes</option>
     </select>
     <select name="scope" onchange="this.form.submit()" class="rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
       <option value="">All Scope</option>

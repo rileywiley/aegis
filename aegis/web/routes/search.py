@@ -1,21 +1,265 @@
-"""Hybrid search page — keyword + semantic search across meetings, emails, chats."""
+"""Hybrid search page — keyword + semantic search across meetings, emails, chats.
+
+This module also exposes ``GET /api/search`` — a JSON endpoint used by the
+Helios menu bar app's manual attachment picker (HELIOS_BUILD_PLAN.md
+Track 4H.2). The JSON variant searches across People, Workstreams, and
+asks (Email + Chat) and returns a flat array. It lives here, alongside
+the HTMX search page, because both endpoints share keyword-search
+patterns; the JSON variant uses a separate handler because it has a
+different response shape and result types (entities vs. content items).
+"""
 
 import logging
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel
 from sqlalchemy import text, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegis.config import get_settings
 from aegis.db.engine import get_session
-from aegis.db.models import ChatMessage, Email, Meeting, Person
+from aegis.db.models import ChatAsk, ChatMessage, Email, EmailAsk, Meeting, Person, Workstream
 from aegis.processing.embeddings import embed_text
 from aegis.web import templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ═══════════════════════════════════════════════════════════
+# JSON entity-search endpoint (Helios attachment picker)
+# ═══════════════════════════════════════════════════════════
+
+
+_VALID_TYPES = {"person", "workstream", "ask"}
+
+
+class SearchResult(BaseModel):
+    """One row of the /api/search response."""
+
+    type: Literal["person", "workstream", "ask"]
+    id: int
+    label: str
+    snippet: str
+
+
+def _parse_types(types: str) -> set[str]:
+    """Parse comma-separated types, drop unknowns, dedup. Empty → empty set."""
+    if not types:
+        return set()
+    parts = {t.strip().lower() for t in types.split(",") if t.strip()}
+    return parts & _VALID_TYPES
+
+
+def _sort_key(query_lower: str, label: str) -> tuple[int, int, str]:
+    """Rank exact prefix > exact substring > everything else, then by label."""
+    label_lower = (label or "").lower()
+    if not query_lower:
+        return (2, 0, label_lower)
+    if label_lower.startswith(query_lower):
+        return (0, 0, label_lower)
+    if query_lower in label_lower:
+        return (1, label_lower.find(query_lower), label_lower)
+    return (2, 0, label_lower)
+
+
+async def _search_people(
+    session: AsyncSession, query: str, limit: int,
+) -> list[SearchResult]:
+    pattern = f"%{query}%"
+    # Match name OR email; aliases is an array column — use ARRAY contains
+    # via a separate predicate. SQLAlchemy's any_/all_ patterns are
+    # awkward for "any element ILIKE pattern", so we match name + email
+    # only (good enough for v1 — the resolver does the heavy fuzzy work).
+    stmt = (
+        select(Person)
+        .where(
+            or_(
+                Person.name.ilike(pattern),
+                Person.email.ilike(pattern),
+            )
+        )
+        .order_by(Person.name)
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    items: list[SearchResult] = []
+    for p in result.scalars().all():
+        # Snippet: prefer title; fall back to role; then email; then "".
+        snippet = p.title or p.role or p.email or ""
+        items.append(
+            SearchResult(
+                type="person",
+                id=p.id,
+                label=p.name or (p.email or f"Person #{p.id}"),
+                snippet=snippet,
+            )
+        )
+    return items
+
+
+async def _search_workstreams(
+    session: AsyncSession, query: str, limit: int,
+) -> list[SearchResult]:
+    pattern = f"%{query}%"
+    stmt = (
+        select(Workstream)
+        .where(
+            or_(
+                Workstream.name.ilike(pattern),
+                Workstream.description.ilike(pattern),
+            )
+        )
+        .order_by(Workstream.updated.desc())
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    items: list[SearchResult] = []
+    for w in result.scalars().all():
+        status = (w.status or "active").capitalize()
+        desc = (w.description or "").strip()
+        if desc:
+            snippet = f"{status} · {desc[:80]}"
+        else:
+            snippet = status
+        items.append(
+            SearchResult(
+                type="workstream",
+                id=w.id,
+                label=w.name or f"Workstream #{w.id}",
+                snippet=snippet,
+            )
+        )
+    return items
+
+
+async def _search_asks(
+    session: AsyncSession, query: str, limit: int,
+) -> list[SearchResult]:
+    """Search EmailAsk and ChatAsk by description; return as type='ask'.
+
+    Each ask exposes its source via a marker prefix on the snippet so the
+    user can disambiguate ("from email/chat: ..."). IDs are returned as-is
+    from the source table; the caller distinguishes by source ONLY in the
+    snippet — both source IDs are addressable separately by the wider Aegis
+    data model. For the attachment picker that's fine: the picker just
+    needs (type, id).
+    """
+    pattern = f"%{query}%"
+
+    email_stmt = (
+        select(EmailAsk, Email)
+        .join(Email, EmailAsk.email_id == Email.id)
+        .where(EmailAsk.description.ilike(pattern))
+        .order_by(EmailAsk.updated.desc())
+        .limit(limit)
+    )
+    chat_stmt = (
+        select(ChatAsk, ChatMessage, Person.name.label("sender_name"))
+        .join(ChatMessage, ChatAsk.message_id == ChatMessage.id)
+        .outerjoin(Person, ChatMessage.sender_id == Person.id)
+        .where(ChatAsk.description.ilike(pattern))
+        .order_by(ChatAsk.updated.desc())
+        .limit(limit)
+    )
+
+    items: list[SearchResult] = []
+
+    email_res = await session.execute(email_stmt)
+    for row in email_res.all():
+        ask = row[0]
+        email = row[1]
+        # Try to surface a sender hint. Email senders are tracked via
+        # Email.sender_id (people row). To keep this lean we fall back to
+        # the Email.recipients JSON or just to "email".
+        snippet = "from email"
+        if email and getattr(email, "subject", None):
+            snippet = f"from email: {email.subject[:60]}"
+        items.append(
+            SearchResult(
+                type="ask",
+                id=ask.id,
+                label=ask.description[:120] if ask.description else f"Ask #{ask.id}",
+                snippet=snippet,
+            )
+        )
+
+    chat_res = await session.execute(chat_stmt)
+    for row in chat_res.all():
+        ask = row[0]
+        sender_name = row[2] or "chat"
+        snippet = f"from {sender_name} (Teams)"
+        items.append(
+            SearchResult(
+                type="ask",
+                id=ask.id,
+                label=ask.description[:120] if ask.description else f"Ask #{ask.id}",
+                snippet=snippet,
+            )
+        )
+
+    return items
+
+
+@router.get("/api/search", response_model=list[SearchResult])
+async def api_search(
+    q: str = Query("", description="Query string. Empty/whitespace → []."),
+    types: str = Query(
+        "person,workstream,ask",
+        description="Comma-separated entity types: person, workstream, ask.",
+    ),
+    limit: int = Query(10, description="Max results across all types. Clamped to [1,50]."),
+    session: AsyncSession = Depends(get_session),
+) -> list[SearchResult]:
+    """JSON entity search for the Helios attachment picker.
+
+    Returns at most ``limit`` results across all requested types,
+    keyword-matched (ILIKE) against name/email/description fields. Empty
+    or whitespace-only ``q`` returns ``[]``. Invalid type values are
+    silently filtered; if all types are invalid, returns ``[]``.
+
+    The JSON variant lives on the same router as the existing HTMX
+    ``/search`` page (which is included in ``aegis/main.py`` without a
+    prefix), so this handler just declares its full path explicitly.
+    """
+    query = (q or "").strip()
+    if not query:
+        return []
+
+    # Clamp limit to [1, 50]. ``int(limit) if limit is not None else 10``
+    # — falsy values (0, negative) clamp to 1, not the default 10.
+    try:
+        raw_limit = int(limit) if limit is not None else 10
+    except (TypeError, ValueError):
+        raw_limit = 10
+    capped_limit = max(1, min(raw_limit, 50))
+
+    valid = _parse_types(types or "")
+    if not valid:
+        return []
+
+    # Each per-type query gets the full limit budget; we cap the merged
+    # output afterward. This keeps individual type results balanced when a
+    # query matches a lot of one kind.
+    per_type_limit = capped_limit
+
+    results: list[SearchResult] = []
+
+    if "person" in valid:
+        results.extend(await _search_people(session, query, per_type_limit))
+    if "workstream" in valid:
+        results.extend(await _search_workstreams(session, query, per_type_limit))
+    if "ask" in valid:
+        results.extend(await _search_asks(session, query, per_type_limit))
+
+    # Rank: prefix match > substring match > other; tie-break by label.
+    query_lower = query.lower()
+    results.sort(key=lambda r: _sort_key(query_lower, r.label))
+
+    return results[:capped_limit]
 
 
 @router.get("/search")

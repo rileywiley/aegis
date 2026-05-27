@@ -1,0 +1,177 @@
+{% extends "helios/base.html" %}
+
+{% block title %}Helios — Overview{% endblock %}
+{% block page_title %}Helios{% endblock %}
+
+{% block helios_content %}
+
+<!-- Status pill (HTMX polled every 5s) -->
+{% include "helios/_partials/status_pill.html" %}
+
+<!-- System health row -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+  <!-- Daemon -->
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Daemon</p>
+    <p class="mt-2 text-lg font-semibold text-gray-900">
+      {% if helios_online %}
+        {{ (status or {}).get('daemon', 'running') }}
+      {% else %}
+        <span class="text-red-600">offline</span>
+      {% endif %}
+    </p>
+  </div>
+
+  <!-- Mic -->
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Microphone</p>
+    {% set mic_ok = permissions and permissions.get('mic_granted') %}
+    <p class="mt-2 text-lg font-semibold {% if mic_ok %}text-emerald-600{% else %}text-amber-600{% endif %}">
+      {% if mic_ok %}granted{% elif permissions %}not granted{% else %}—{% endif %}
+    </p>
+  </div>
+
+  <!-- Screen -->
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Screen recording</p>
+    {% set scr_ok = permissions and permissions.get('screen_recording_granted') %}
+    <p class="mt-2 text-lg font-semibold {% if scr_ok %}text-emerald-600{% else %}text-amber-600{% endif %}">
+      {% if scr_ok %}granted{% elif permissions %}not granted{% else %}—{% endif %}
+    </p>
+  </div>
+
+  <!-- Components rollup -->
+  <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Components</p>
+    {% set components = (status or {}).get('components') or {} %}
+    {% if components %}
+    <ul class="mt-2 space-y-0.5 text-xs">
+      {% for name, comp_status in components.items() %}
+      <li class="flex items-center justify-between">
+        <span class="text-gray-600">{{ name }}</span>
+        <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium
+          {% if comp_status == 'ok' %}bg-emerald-50 text-emerald-700
+          {% elif comp_status == 'unavailable' %}bg-amber-50 text-amber-700
+          {% else %}bg-red-50 text-red-700{% endif %}">
+          {{ comp_status }}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mt-2 text-sm text-gray-400">—</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Today's timeline -->
+<div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+  <div class="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+    <h3 class="text-base font-semibold text-gray-900">Today's timeline</h3>
+    <span class="text-xs text-gray-400">{{ todays_meetings|length }} meeting{{ 's' if todays_meetings|length != 1 else '' }}</span>
+  </div>
+  {% if todays_meetings %}
+  <ul class="divide-y divide-gray-50">
+    {% for m in todays_meetings %}
+    <li class="px-6 py-3 flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-gray-900 truncate">{{ m.title }}</p>
+        <p class="mt-0.5 text-xs text-gray-500">
+          {{ m.start_time.astimezone(tz).strftime('%-I:%M %p') }} – {{ m.end_time.astimezone(tz).strftime('%-I:%M %p') }}
+          {% if m.duration %}<span class="ml-2 text-gray-400">{{ m.duration }} min</span>{% endif %}
+        </p>
+      </div>
+      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium
+        {% if m.transcript_status == 'captured' %}bg-emerald-50 text-emerald-700
+        {% elif m.transcript_status == 'partial' %}bg-amber-50 text-amber-700
+        {% elif m.transcript_status == 'no_audio' %}bg-gray-100 text-gray-600
+        {% elif m.transcript_status == 'failed' %}bg-red-50 text-red-700
+        {% else %}bg-gray-50 text-gray-500{% endif %}">
+        {{ m.transcript_status or 'pending' }}
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="px-6 py-6 text-center">
+    <p class="text-sm text-gray-400">No meetings today.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Today's voice notes -->
+<div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+  <div class="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+    <h3 class="text-base font-semibold text-gray-900">Today's voice notes</h3>
+    <span class="text-xs text-gray-400">{{ todays_voice_notes|length }} note{{ 's' if todays_voice_notes|length != 1 else '' }}</span>
+  </div>
+  {% if todays_voice_notes %}
+  <ul class="divide-y divide-gray-50">
+    {% for vn in todays_voice_notes %}
+    <li class="px-6 py-3">
+      <a href="/voice-notes/{{ vn.id }}" class="block group">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-sm text-gray-800 truncate group-hover:text-aegis-700">
+              {{ (vn.transcript_text_edited or vn.transcript_text or '')[:120] }}{% if (vn.transcript_text_edited or vn.transcript_text or '') | length > 120 %}…{% endif %}
+            </p>
+            <p class="mt-0.5 text-xs text-gray-500">
+              {{ vn.started_at.astimezone(tz).strftime('%-I:%M %p') }}
+              · {{ (vn.duration_seconds or 0) | round(0) | int }}s
+              · {{ vn.triggered_by }}
+            </p>
+          </div>
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium
+            {% if vn.processing_status == 'completed' %}bg-emerald-50 text-emerald-700
+            {% elif vn.processing_status == 'failed' %}bg-red-50 text-red-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">
+            {{ vn.processing_status }}
+          </span>
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="px-6 py-6 text-center">
+    <p class="text-sm text-gray-400">No voice notes recorded today.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Upcoming -->
+<div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+  <div class="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+    <h3 class="text-base font-semibold text-gray-900">Upcoming (next 24h)</h3>
+    <a href="/helios/calendar" class="text-xs text-aegis-600 hover:text-aegis-700">View calendar</a>
+  </div>
+  {% if upcoming %}
+  <ul class="divide-y divide-gray-50">
+    {% for m in upcoming %}
+    <li class="px-6 py-3 flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-gray-900 truncate">{{ m.title }}</p>
+        <p class="mt-0.5 text-xs text-gray-500">
+          {{ m.start_time.astimezone(tz).strftime('%a %-I:%M %p') }}
+        </p>
+      </div>
+      {% if m.helios_exclude is sameas true %}
+      <span class="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">excluded</span>
+      {% elif m.helios_exclude is sameas false %}
+      <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">always include</span>
+      {% elif m.is_excluded %}
+      <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">keyword excluded</span>
+      {% else %}
+      <span class="inline-flex items-center rounded-full bg-aegis-50 px-2 py-0.5 text-[10px] font-medium text-aegis-700">scheduled</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="px-6 py-6 text-center">
+    <p class="text-sm text-gray-400">No upcoming events.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

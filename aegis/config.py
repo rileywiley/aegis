@@ -20,7 +20,14 @@ class Settings(BaseSettings):
     azure_tenant_id: str = ""
     database_url: str = "postgresql+asyncpg://postgres@localhost:5434/aegis"
 
+    # ── Helios (capture daemon) ──────────────────────────
+    helios_url: str = "http://127.0.0.1:3031"
+    helios_token_path: str = "~/.aegis/capture.toml"
+    helios_heartbeat_seconds: int = 60
+    helios_heartbeat_timeout_seconds: int = 5
+
     # ── Screenpipe ────────────────────────────────────────
+    # DEPRECATED: replaced by helios_url in Phase 3; will remove in Phase 4
     screenpipe_url: str = "http://localhost:3030"
 
     # ── Timezone ──────────────────────────────────────────
@@ -35,6 +42,7 @@ class Settings(BaseSettings):
     polling_calendar_seconds: int = 1800
     polling_email_seconds: int = 900
     polling_teams_seconds: int = 600
+    # DEPRECATED: replaced by helios_heartbeat_seconds in Phase 3; will remove in Phase 4
     polling_screenpipe_seconds: int = 300
 
     # ── Intelligence schedule ────────────────────────────
@@ -52,6 +60,11 @@ class Settings(BaseSettings):
     workstream_assign_high_confidence: float = 0.55
     workstream_assign_low_confidence: float = 0.35
     workstream_default_quiet_days: int = 14
+    # Voice-note specific floor: cosine similarity below this never
+    # auto-links a voice note to a workstream. Conservative default —
+    # voice notes are short and chatty so we err on the side of leaving
+    # them unlinked rather than mis-linking. HELIOS.md §16.12.
+    voice_note_workstream_floor: float = 0.55
 
     # ── Stale item thresholds ────────────────────────────
     stale_action_item_days: int = 7

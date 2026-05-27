@@ -291,6 +291,11 @@ async def test_frame_persisted_when_frontmost_is_allowed(db, cfg, reporter):
 
 
 async def test_frame_dropped_when_frontmost_not_in_allowlist(db, cfg, reporter):
+    # Explicitly opt into strict allowlist gating — the daemon default is
+    # off (see OcrConfig.gate_by_allowlist) since Teams desktop minimizes
+    # during screen-share and starves the allowlist. The "gate enforces
+    # allowlist" contract still needs to hold when callers opt in.
+    cfg.ocr.gate_by_allowlist = True
     sid = await queries.create_session(db, "manual_screen", started_at=1_000.0)
     ocr = _FakeOcr([OcrResult(text="x" * 50, avg_confidence=0.9)])
     video = _FakeVideoSource([VideoFrame(ts=1_001.0, jpeg=b"jpeg-a")])

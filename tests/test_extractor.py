@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from aegis.db.models import Decision
 from aegis.processing.meeting_extractor import (
     MeetingExtraction,
     extract_meeting,
@@ -156,11 +157,19 @@ async def test_store_meeting_extraction_creates_entities():
     }
 
     mock_session = AsyncMock()
+    # session.add is sync in real SQLAlchemy; override the AsyncMock default so
+    # production's `session.add(decision)` doesn't return an unawaited coroutine.
+    mock_session.add = MagicMock()
+    # session.flush() needs to assign decision.id so the decision_map can index it.
+    def _flush_assign_id():
+        for call in mock_session.add.call_args_list:
+            obj = call.args[0]
+            if getattr(obj, "id", None) is None:
+                obj.id = 20
+    mock_session.flush.side_effect = _flush_assign_id
 
     mock_action_item = MagicMock()
     mock_action_item.id = 10
-    mock_decision = MagicMock()
-    mock_decision.id = 20
     mock_commitment = MagicMock()
     mock_commitment.id = 30
     mock_topic = MagicMock()
@@ -169,7 +178,6 @@ async def test_store_meeting_extraction_creates_entities():
     with (
         patch("aegis.processing.meeting_extractor.embed_text", new_callable=AsyncMock) as mock_embed,
         patch("aegis.db.repositories.create_action_item", new_callable=AsyncMock) as mock_create_ai,
-        patch("aegis.db.repositories.create_decision", new_callable=AsyncMock) as mock_create_dec,
         patch("aegis.db.repositories.create_commitment", new_callable=AsyncMock) as mock_create_com,
         patch("aegis.db.repositories.upsert_topic", new_callable=AsyncMock) as mock_upsert_topic,
         patch("aegis.db.repositories.link_meeting_topics", new_callable=AsyncMock) as mock_link,
@@ -177,7 +185,6 @@ async def test_store_meeting_extraction_creates_entities():
     ):
         mock_embed.return_value = [0.1] * 1536
         mock_create_ai.return_value = mock_action_item
-        mock_create_dec.return_value = mock_decision
         mock_create_com.return_value = mock_commitment
         mock_upsert_topic.return_value = mock_topic
 
@@ -194,8 +201,18 @@ async def test_store_meeting_extraction_creates_entities():
         assert first_call_kwargs.kwargs["assignee_id"] == 1  # Alice Smith
         assert first_call_kwargs.kwargs["source_meeting_id"] == 1
 
-        # 1 decision
-        assert mock_create_dec.call_count == 1
+        # 1 decision — added directly to session (not via repo helper) so
+        # the assigned id can populate decision_map for action_item.related_decision_id.
+        decision_adds = [
+            call.args[0]
+            for call in mock_session.add.call_args_list
+            if isinstance(call.args[0], Decision)
+        ]
+        assert len(decision_adds) == 1
+        decision = decision_adds[0]
+        assert decision.description == "Cap budget at $280K"
+        assert decision.decided_by == 1  # Alice Smith
+        assert decision.source_meeting_id == 1
 
         # 1 commitment
         assert mock_create_com.call_count == 1
@@ -217,13 +234,22 @@ async def test_store_extraction_without_resolved_people():
     extraction = {**CANNED_EXTRACTION}  # no _resolved_people key
 
     mock_session = AsyncMock()
+    # session.add is sync; override AsyncMock default to avoid unawaited-coroutine warning.
+    mock_session.add = MagicMock()
+    # session.flush() must assign a numeric id so decision_map indexing works.
+    def _flush_assign_id():
+        for call in mock_session.add.call_args_list:
+            obj = call.args[0]
+            if getattr(obj, "id", None) is None:
+                obj.id = 1
+    mock_session.flush.side_effect = _flush_assign_id
+
     mock_topic = MagicMock()
     mock_topic.id = 1
 
     with (
         patch("aegis.processing.meeting_extractor.embed_text", new_callable=AsyncMock) as mock_embed,
         patch("aegis.db.repositories.create_action_item", new_callable=AsyncMock),
-        patch("aegis.db.repositories.create_decision", new_callable=AsyncMock),
         patch("aegis.db.repositories.create_commitment", new_callable=AsyncMock),
         patch("aegis.db.repositories.upsert_topic", new_callable=AsyncMock) as mock_topic_fn,
         patch("aegis.db.repositories.link_meeting_topics", new_callable=AsyncMock),

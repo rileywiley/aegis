@@ -1,0 +1,12 @@
+[project]
+name = "shared"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["pydantic>=2.10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

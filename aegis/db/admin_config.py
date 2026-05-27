@@ -75,7 +75,7 @@ async def bootstrap_admin_settings(session: AsyncSession) -> int:
         "polling_calendar_seconds": (settings.polling_calendar_seconds, "Calendar sync interval (seconds)"),
         "polling_email_seconds": (settings.polling_email_seconds, "Email polling interval (seconds)"),
         "polling_teams_seconds": (settings.polling_teams_seconds, "Teams polling interval (seconds)"),
-        "polling_screenpipe_seconds": (settings.polling_screenpipe_seconds, "Screenpipe polling interval (seconds)"),
+        "helios_heartbeat_seconds": (settings.helios_heartbeat_seconds, "Helios /v1/health heartbeat interval (seconds)"),
         # Triage
         "triage_substantive_threshold": (settings.triage_substantive_threshold, "Score above which items are substantive"),
         "triage_contextual_threshold": (settings.triage_contextual_threshold, "Score above which items are contextual"),

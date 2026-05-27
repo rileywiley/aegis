@@ -1,0 +1,35 @@
+{# Wizard step 3 — license acceptance. #}
+<form id="wizard-pane"
+      class="space-y-3"
+      hx-post="/helios/settings/diarization/step3"
+      hx-target="#wizard-pane"
+      hx-swap="outerHTML">
+  <h4 class="text-sm font-semibold text-gray-900">Step 3 of 5 — Accept model licenses</h4>
+  <p class="text-xs text-gray-500">
+    Visit each model page below, sign in to HuggingFace, and click "Agree and access".
+    Then check the boxes here to confirm.
+  </p>
+  {% if error %}
+  <div class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{{ error }}</div>
+  {% endif %}
+  <ul class="space-y-2">
+    {% for m in models %}
+    <li class="flex items-start gap-2">
+      <input type="checkbox" name="accept.{{ m.id }}" value="1"
+             id="accept-{{ loop.index }}"
+             class="mt-1 rounded border-gray-300"
+             {% if accepted and m.id in accepted %}checked{% endif %}>
+      <label for="accept-{{ loop.index }}" class="text-sm text-gray-800">
+        <a href="{{ m.url }}" target="_blank" class="underline text-aegis-700">{{ m.label }}</a>
+        <span class="block text-xs text-gray-400 font-mono">{{ m.id }}</span>
+      </label>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="pt-2">
+    <button type="submit"
+            class="rounded-md bg-aegis-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aegis-700">
+      Continue
+    </button>
+  </div>
+</form>

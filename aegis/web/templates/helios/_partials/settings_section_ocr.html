@@ -1,0 +1,55 @@
+{# OCR meeting apps allowlist + gate toggle. #}
+{% set ocr = toml.get("ocr", {}) %}
+<div class="space-y-4">
+
+  <label class="flex items-start gap-3">
+    <input type="checkbox"
+           name="ocr.gate_by_allowlist"
+           {% if ocr.get("gate_by_allowlist") %}checked{% endif %}
+           class="mt-1 rounded border-gray-300">
+    <input type="hidden" name="__bool__.ocr.gate_by_allowlist" value="1">
+    <span class="text-sm text-gray-800">
+      Gate OCR frames by meeting-app allowlist
+      <span class="block text-xs text-gray-400">
+        {{ field_label('ocr', 'gate_by_allowlist') }} — Phase 5 default is off; flip on for strict gating.
+      </span>
+    </span>
+  </label>
+
+  <div class="space-y-3"
+       x-data='{
+         items: {{ ocr.get("meeting_apps", []) | tojson }},
+         draft: "",
+         add() {
+           const v = this.draft.trim();
+           if (!v || this.items.includes(v)) { this.draft = ""; return; }
+           this.items.push(v);
+           this.draft = "";
+         },
+         remove(i) { this.items.splice(i, 1); },
+       }'>
+    <p class="text-xs text-gray-500">
+      App bundle IDs that should trigger screen-OCR capture during meetings.
+    </p>
+    <div class="flex flex-wrap gap-2">
+      <template x-for="(app, i) in items" :key="app">
+        <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-mono">
+          <span x-text="app"></span>
+          <input type="hidden" name="ocr.meeting_apps[]" :value="app">
+          <button type="button" class="text-gray-400 hover:text-red-600"
+                  @click="remove(i)">&times;</button>
+        </span>
+      </template>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="text" x-model="draft"
+             @keydown.enter.prevent="add()"
+             placeholder="com.example.myapp"
+             class="rounded-md border-gray-300 text-sm font-mono w-72">
+      <button type="button" @click="add()"
+              class="rounded-md bg-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-300">
+        Add
+      </button>
+    </div>
+  </div>
+</div>

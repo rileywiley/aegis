@@ -1,0 +1,36 @@
+{# Retention policy section. #}
+{% set ret = toml.get("retention", {}) %}
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Raw audio retention (days)</span>
+    <input type="number" min="1" max="365"
+           name="retention.raw_audio_days"
+           value="{{ ret.get('raw_audio_days', 7) }}"
+           class="mt-1 w-full rounded-md border-gray-300 text-sm">
+    <span class="text-xs text-gray-400">{{ field_label('retention', 'raw_audio_days') }}</span>
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Trash hold (hours)</span>
+    <input type="number" min="0" max="720"
+           name="retention.trash_hold_hours"
+           value="{{ ret.get('trash_hold_hours', 24) }}"
+           class="mt-1 w-full rounded-md border-gray-300 text-sm">
+    <span class="text-xs text-gray-400">{{ field_label('retention', 'trash_hold_hours') }}</span>
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Cleanup hour (local 0–23)</span>
+    <input type="number" min="0" max="23"
+           name="retention.cleanup_hour_local"
+           value="{{ ret.get('cleanup_hour_local', 3) }}"
+           class="mt-1 w-full rounded-md border-gray-300 text-sm">
+    <span class="text-xs text-gray-400">{{ field_label('retention', 'cleanup_hour_local') }}</span>
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-gray-700">Disk-space warning (GB)</span>
+    <input type="number" min="1" max="500"
+           name="retention.disk_space_warning_gb"
+           value="{{ ret.get('disk_space_warning_gb', 5) }}"
+           class="mt-1 w-full rounded-md border-gray-300 text-sm">
+    <span class="text-xs text-gray-400">{{ field_label('retention', 'disk_space_warning_gb') }}</span>
+  </label>
+</div>

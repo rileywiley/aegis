@@ -1,0 +1,24 @@
+{# Generic action result pill — used by every diagnostics action handler
+   except test-capture (which uses action_pill_test_capture.html for
+   its polling render). Inputs:
+
+     kind        : one of 'success' | 'error' | 'warning' | 'pending' | 'unreachable'
+     headline    : short top line (e.g. "Flushed 12 transcription jobs")
+     detail      : optional supporting text
+     download_url: optional — when present rendered as an anchor "Download"
+#}
+{% set palette = {
+  'success':     'bg-emerald-50 text-emerald-700',
+  'error':       'bg-red-50 text-red-700',
+  'warning':     'bg-amber-50 text-amber-700',
+  'pending':     'bg-aegis-50 text-aegis-700 animate-pulse',
+  'unreachable': 'bg-red-50 text-red-700',
+} %}
+{% set cls = palette.get(kind, 'bg-gray-100 text-gray-600') %}
+<span class="inline-flex items-center gap-1 rounded-full {{ cls }} px-2 py-1 text-xs font-medium"
+      {% if detail %}title="{{ detail }}"{% endif %}>
+  {{ headline }}
+  {% if download_url %}
+    <a href="{{ download_url }}" class="ml-1 underline">Download</a>
+  {% endif %}
+</span>

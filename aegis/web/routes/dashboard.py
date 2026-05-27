@@ -413,6 +413,11 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
         persons = await get_persons_by_ids(session, list(person_ids))
         person_names = {pid: p.name for pid, p in persons.items()}
 
+    # Today's voice notes — mix into the daily timeline alongside meetings
+    from aegis.db.voice_notes_repository import VoiceNotesRepository
+    voice_notes_repo = VoiceNotesRepository(session)
+    todays_voice_notes = await voice_notes_repo.list_in_range(start_utc, end_utc)
+
     # Last sync: most recent last_success from system_health
     last_sync_stmt = select(func.max(SystemHealth.last_success))
     last_sync_result = await session.execute(last_sync_stmt)
@@ -451,6 +456,8 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
             "person_names": person_names,
             # Zone 5
             "next_meeting": next_meeting,
+            # Voice notes for the daily timeline
+            "todays_voice_notes": todays_voice_notes,
             # Last sync
             "last_sync_minutes_ago": last_sync_minutes_ago,
             # Service health alerts

@@ -2,27 +2,35 @@
 
 Per HELIOS.md §7.3:
 
-* ``GET /sessions``                     — filterable list (kind, time, status).
+* ``GET /sessions``                     — filterable list (kind, time, status, date).
 * ``GET /sessions/{id}``               — detail.
-* ``GET /sessions/{id}/transcript``    — placeholder until Phase 3.
-* ``POST /sessions/{id}/re-transcribe`` — queues re-transcription (Phase 3).
-* ``POST /sessions/{id}/re-diarize``    — queues re-diarization (Phase 3).
+* ``GET /sessions/{id}/transcript``    — segments + coverage.
+* ``POST /sessions/{id}/re-transcribe`` — requeue all chunks for transcription.
+* ``POST /sessions/{id}/re-diarize``    — clear turns, re-enqueue diarization.
 * ``DELETE /sessions/{id}``            — deletes session + cascade.
 
-The actual queue is wired in Phase 3 (Track 3D); the action endpoints
-return 202 ``{"status": "queued"}`` so clients have a stable contract.
+Wave 6D (Track 6D) made ``re-transcribe`` / ``re-diarize`` real:
+they manipulate DB state directly and enqueue the diarization
+worker. The list endpoint additionally accepts ``date=YYYY-MM-DD``
+to filter to a single local-tz day.
 """
 
 from __future__ import annotations
 
 import json
+from datetime import date as date_cls, datetime, time as time_cls
 from pathlib import Path as _FsPath
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
+from fastapi.responses import FileResponse
 
 from helios.api.schemas import (
+    AudioChunkResponse,
+    ReDiarizeResponse,
+    ReTranscribeResponse,
     SessionActionResponse,
+    SessionAudioChunksResponse,
     SessionDeleteResponse,
     SessionResponse,
     SessionsListResponse,
@@ -63,6 +71,19 @@ def _row_to_response(row) -> SessionResponse:
     )
 
 
+def _parse_date_to_local_day_range(date_str: str) -> tuple[float, float]:
+    """Convert an ISO ``YYYY-MM-DD`` string to a (gte, lte) epoch window.
+
+    The window spans the entire local-tz day [00:00:00.000,
+    23:59:59.999999]. Raises ``ValueError`` for invalid input — the
+    caller maps that to a 422.
+    """
+    parsed = date_cls.fromisoformat(date_str)
+    start_dt = datetime.combine(parsed, time_cls.min).astimezone()
+    end_dt = datetime.combine(parsed, time_cls.max).astimezone()
+    return (start_dt.timestamp(), end_dt.timestamp())
+
+
 @router.get("/sessions", response_model=SessionsListResponse)
 async def list_sessions(
     request: Request,
@@ -70,9 +91,39 @@ async def list_sessions(
     start_ts_gte: float | None = Query(default=None),
     start_ts_lte: float | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
+    date: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> SessionsListResponse:
+    """List capture sessions, newest first.
+
+    Filters (all optional):
+
+    * ``kind``         — exact match on ``capture_sessions.kind``.
+    * ``start_ts_gte`` / ``start_ts_lte`` — epoch second bounds.
+    * ``status``       — ``active`` (ended_at IS NULL),
+      ``ended``/``completed``/``captured`` (ended_at IS NOT NULL), or
+      ``failed`` (end_reason LIKE failure marker).
+    * ``date``         — ISO-8601 ``YYYY-MM-DD`` filter to the local-tz day.
+      Mutually layered with start_ts_gte/lte (whichever is tighter wins
+      via AND).
+    """
+    if date is not None:
+        try:
+            day_gte, day_lte = _parse_date_to_local_day_range(date)
+        except ValueError as exc:
+            raise _err(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "invalid_date",
+                f"date must be ISO YYYY-MM-DD: {exc}",
+            )
+        # Layer onto any caller-supplied bounds by taking the tighter
+        # window (max of lower bounds, min of upper bounds).
+        if start_ts_gte is None or day_gte > start_ts_gte:
+            start_ts_gte = day_gte
+        if start_ts_lte is None or day_lte < start_ts_lte:
+            start_ts_lte = day_lte
+
     db = request.app.state.db_pool.writer
     rows = await queries.list_sessions(
         db,
@@ -186,16 +237,107 @@ async def get_session_transcript(
     )
 
 
+@router.get(
+    "/sessions/{session_id}/audio-chunks",
+    response_model=SessionAudioChunksResponse,
+)
+async def get_session_audio_chunks_endpoint(
+    request: Request,
+    session_id: int = Path(..., ge=1),
+) -> SessionAudioChunksResponse:
+    """Audio-chunk inventory for one session, ordered by start_ts.
+
+    Powers the dashboard's Audio tab. The actual WAV bytes are served
+    by ``GET /v1/sessions/{id}/audio/{chunk_id}`` so the client can use
+    a normal ``<audio>`` element. ``has_audio_file`` is False when the
+    chunk has been archived by the retention worker (path = NULL).
+    """
+    db = request.app.state.db_pool.writer
+    session_row = await queries.get_session_by_id(db, session_id)
+    if session_row is None:
+        raise _err(
+            status.HTTP_404_NOT_FOUND,
+            "session_not_found",
+            f"session {session_id} not found",
+        )
+    chunks = await queries.get_session_audio_chunks(db, session_id)
+    return SessionAudioChunksResponse(
+        session_id=session_id,
+        chunks=[
+            AudioChunkResponse(
+                id=c.id,
+                session_id=c.session_id,
+                channel=c.channel,
+                start_ts=c.start_ts,
+                end_ts=c.end_ts,
+                samples=c.samples,
+                status=c.status,
+                partial=bool(getattr(c, "partial", False)),
+                duration_seconds=max(0.0, c.end_ts - c.start_ts),
+                has_audio_file=bool(c.path),
+            )
+            for c in chunks
+        ],
+    )
+
+
+@router.get("/sessions/{session_id}/audio/{chunk_id}")
+async def get_session_audio_file(
+    request: Request,
+    session_id: int = Path(..., ge=1),
+    chunk_id: int = Path(..., ge=1),
+) -> FileResponse:
+    """Stream the WAV bytes for one audio chunk.
+
+    Path-safety: chunks are referenced by their DB id, which is verified
+    to belong to ``session_id``. The on-disk path stored in the row is
+    written by the capture worker (never user-controlled), so we don't
+    need additional traversal guards beyond confirming it exists.
+    """
+    db = request.app.state.db_pool.writer
+    chunk = await queries.get_chunk_by_id(db, chunk_id)
+    if chunk is None or chunk.session_id != session_id:
+        raise _err(
+            status.HTTP_404_NOT_FOUND,
+            "chunk_not_found",
+            f"chunk {chunk_id} not found in session {session_id}",
+        )
+    if not chunk.path:
+        raise _err(
+            status.HTTP_410_GONE,
+            "chunk_archived",
+            f"chunk {chunk_id} has been archived (no audio file on disk)",
+        )
+    fs_path = _FsPath(chunk.path)
+    if not fs_path.exists():
+        raise _err(
+            status.HTTP_404_NOT_FOUND,
+            "chunk_file_missing",
+            f"chunk {chunk_id} file no longer exists on disk",
+        )
+    return FileResponse(
+        path=str(fs_path),
+        media_type="audio/wav",
+        filename=f"session-{session_id}-chunk-{chunk_id}.wav",
+    )
+
+
 @router.post(
     "/sessions/{session_id}/re-transcribe",
-    response_model=SessionActionResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ReTranscribeResponse,
 )
 async def re_transcribe(
     request: Request,
     session_id: int = Path(..., ge=1),
-) -> SessionActionResponse:
-    """Phase-2 stub — Phase 3 (Track 3D) wires the real queue."""
+) -> ReTranscribeResponse:
+    """Re-enqueue every chunk in ``session_id`` for transcription.
+
+    Clears existing ``transcript_segments`` rows tied to the session
+    (so the worker doesn't end up with double-extracted text), then
+    flips each chunk's ``status`` back to ``recorded`` and resets
+    ``transcribed_at`` / ``transcription_attempts``. The transcription
+    worker's next poll picks them up.
+    """
     db = request.app.state.db_pool.writer
     row = await queries.get_session_by_id(db, session_id)
     if row is None:
@@ -204,20 +346,37 @@ async def re_transcribe(
             "session_not_found",
             f"session {session_id} not found",
         )
-    log.info("re_transcribe_queued", session_id=session_id)
-    return SessionActionResponse(status="queued", session_id=session_id)
+    # Clear segments BEFORE flipping chunk status so a racing poll
+    # can't accidentally append new segments alongside stale ones.
+    await queries.clear_transcript_segments_for_session(db, session_id)
+    requeued = await queries.requeue_chunks_for_session(db, session_id)
+    log.info(
+        "re_transcribe_requeued",
+        session_id=session_id,
+        chunks_requeued=requeued,
+    )
+    return ReTranscribeResponse(
+        session_id=session_id, chunks_requeued=requeued
+    )
 
 
 @router.post(
     "/sessions/{session_id}/re-diarize",
-    response_model=SessionActionResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ReDiarizeResponse,
 )
 async def re_diarize(
     request: Request,
     session_id: int = Path(..., ge=1),
-) -> SessionActionResponse:
-    """Phase-2 stub — Phase 3 wires the real diarization queue."""
+) -> ReDiarizeResponse:
+    """Re-enqueue diarization for ``session_id``.
+
+    Clears prior ``diarization_turns`` rows + resets the session's
+    ``diarization_status`` to ``pending``, then attempts to enqueue
+    the session id onto the diarization worker. The worker handles
+    "no system audio" / "disabled" cases internally; if it's None
+    (disabled / not wired), the response carries
+    ``jobs_requeued=0`` so the dashboard can show a hint.
+    """
     db = request.app.state.db_pool.writer
     row = await queries.get_session_by_id(db, session_id)
     if row is None:
@@ -226,8 +385,31 @@ async def re_diarize(
             "session_not_found",
             f"session {session_id} not found",
         )
-    log.info("re_diarize_queued", session_id=session_id)
-    return SessionActionResponse(status="queued", session_id=session_id)
+    await queries.clear_diarization_turns_for_session(db, session_id)
+    await queries.update_session_diarization_status(
+        db, session_id, status="pending"
+    )
+    diar_worker = getattr(request.app.state, "diarization_worker", None)
+    jobs_requeued = 0
+    if diar_worker is not None:
+        try:
+            await diar_worker.enqueue_session(session_id)
+            jobs_requeued = 1
+        except Exception as exc:  # noqa: BLE001 — best effort
+            log.warning(
+                "re_diarize_enqueue_failed",
+                session_id=session_id,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+    log.info(
+        "re_diarize_requeued",
+        session_id=session_id,
+        jobs_requeued=jobs_requeued,
+    )
+    return ReDiarizeResponse(
+        session_id=session_id, jobs_requeued=jobs_requeued
+    )
 
 
 @router.delete(

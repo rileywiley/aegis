@@ -1,0 +1,21 @@
+{# Result partial for step 4 token validation. #}
+{% if ok %}
+<div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-2">
+  <p class="font-medium">✓ Token valid (HF user: {{ detail }}).</p>
+  <form hx-post="/helios/settings/diarization/download-models"
+        hx-target="#wizard-pane"
+        hx-swap="outerHTML"
+        class="flex items-center gap-2">
+    <input type="hidden" name="hf_token" value="{{ token }}">
+    <button type="submit"
+            class="rounded-md bg-emerald-600 px-3 py-1 font-semibold text-white hover:bg-emerald-700">
+      Continue to download
+    </button>
+  </form>
+</div>
+{% else %}
+<div class="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+  <p class="font-medium">Token validation failed</p>
+  <p class="mt-1">{{ detail }}</p>
+</div>
+{% endif %}

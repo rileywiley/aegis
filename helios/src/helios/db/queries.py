@@ -1021,3 +1021,149 @@ async def get_audio_chunks_with_path_for_session(
     )
     rows = await cursor.fetchall()
     return [AudioChunkRow(**_row_to_dict(cursor, r)) for r in rows]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Wave 6D additions — diagnostic queue flush + session re-process
+# ─────────────────────────────────────────────────────────────────────
+
+
+async def delete_pending_transcription_chunks(
+    db: aiosqlite.Connection,
+) -> int:
+    """Flush pending transcription work.
+
+    Marks every chunk currently in the ``recorded`` (not-yet-
+    transcribed) state as ``transcription_failed`` with a synthetic
+    reason. The transcription worker won't pick them up again on the
+    next poll because the status guard is ``WHERE status = 'recorded'``.
+    Returns the number of rows affected so the diagnostics response can
+    report it.
+
+    Used by ``POST /v1/diagnostics/flush-queues``. Conservative on
+    purpose: rather than ``DELETE`` (which would lose the chunk's WAV
+    pointer and prevent re-transcription via
+    :func:`requeue_chunks_for_session`), we just remove them from the
+    work queue. ``POST /v1/sessions/{id}/re-transcribe`` reverses the
+    state for any sessions the user wants to retry later.
+    """
+    cursor = await db.execute(
+        "UPDATE audio_chunks "
+        "SET status = 'transcription_failed' "
+        "WHERE status = 'recorded' AND transcribed_at IS NULL"
+    )
+    await db.commit()
+    return int(cursor.rowcount or 0)
+
+
+async def delete_pending_diarization_jobs(
+    db: aiosqlite.Connection,
+) -> int:
+    """Flush pending diarization work.
+
+    Helios has no on-disk ``diarization_jobs`` table — the queue lives
+    in :class:`DiarizationWorker` as an ``asyncio.Queue`` of session
+    ids. The only DB-side signal of "wants diarization" is
+    ``capture_sessions.diarization_status IN ('pending', 'running')``,
+    so we flip those to ``failed`` with a synthetic marker. The worker
+    treats it as a terminal status and won't re-process the row
+    unless the user explicitly calls
+    ``POST /v1/sessions/{id}/re-diarize``.
+
+    Returns the number of sessions whose status was flipped.
+    """
+    cursor = await db.execute(
+        "UPDATE capture_sessions "
+        "SET diarization_status = 'failed' "
+        "WHERE diarization_status IN ('pending', 'running')"
+    )
+    await db.commit()
+    return int(cursor.rowcount or 0)
+
+
+async def requeue_chunks_for_session(
+    db: aiosqlite.Connection,
+    session_id: int,
+) -> int:
+    """Reset every chunk in ``session_id`` for re-transcription.
+
+    Flips ``status`` back to ``recorded`` and clears
+    ``transcribed_at`` + ``transcription_attempts`` so the worker's
+    ``get_pending_chunks`` query picks them up again. Only touches
+    chunks whose ``path`` is non-NULL (a trashed chunk has nothing to
+    transcribe). Returns the number of rows requeued.
+
+    Used by ``POST /v1/sessions/{id}/re-transcribe``.
+    """
+    cursor = await db.execute(
+        "UPDATE audio_chunks "
+        "SET status = 'recorded', transcribed_at = NULL, "
+        "    transcription_attempts = 0 "
+        "WHERE session_id = ? AND path IS NOT NULL",
+        (session_id,),
+    )
+    await db.commit()
+    return int(cursor.rowcount or 0)
+
+
+async def clear_transcript_segments_for_session(
+    db: aiosqlite.Connection,
+    session_id: int,
+) -> int:
+    """Delete every ``transcript_segments`` row tied to ``session_id``.
+
+    Used by ``POST /v1/sessions/{id}/re-transcribe`` so the worker
+    doesn't end up appending fresh segments alongside stale ones. The
+    cascade is via ``transcript_segments.chunk_id → audio_chunks.id``,
+    so we delete by joining on chunk session_id.
+    """
+    cursor = await db.execute(
+        "DELETE FROM transcript_segments "
+        "WHERE chunk_id IN ("
+        "    SELECT id FROM audio_chunks WHERE session_id = ?"
+        ")",
+        (session_id,),
+    )
+    await db.commit()
+    return int(cursor.rowcount or 0)
+
+
+async def clear_diarization_turns_for_session(
+    db: aiosqlite.Connection,
+    session_id: int,
+) -> int:
+    """Delete every ``diarization_turns`` row for ``session_id``.
+
+    Used by ``POST /v1/sessions/{id}/re-diarize`` so the next run
+    starts from a clean slate (the worker's INSERT path doesn't dedup).
+    Also resets ``diarization_status`` back to ``pending`` so polling
+    UIs reflect the in-flight state.
+    """
+    cursor = await db.execute(
+        "DELETE FROM diarization_turns WHERE session_id = ?",
+        (session_id,),
+    )
+    await db.commit()
+    return int(cursor.rowcount or 0)
+
+
+async def get_recent_daemon_events_json(
+    db: aiosqlite.Connection,
+    limit: int = 100,
+) -> list[dict]:
+    """Return the most recent ``daemon_events`` rows as plain dicts.
+
+    Differs from :func:`get_recent_daemon_events` in that the rows are
+    returned as JSON-serialisable dicts (with the ``id`` column
+    included) rather than typed :class:`DaemonEventRow` instances. The
+    diagnostic bundle generator embeds these directly into
+    ``events.json``.
+    """
+    cursor = await db.execute(
+        "SELECT id, ts, level, component, event, details "
+        "FROM daemon_events ORDER BY ts DESC LIMIT ?",
+        (int(limit),),
+    )
+    rows = await cursor.fetchall()
+    cols = [d[0] for d in cursor.description]
+    return [dict(zip(cols, row)) for row in rows]

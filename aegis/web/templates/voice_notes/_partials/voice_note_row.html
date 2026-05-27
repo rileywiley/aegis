@@ -1,0 +1,50 @@
+{# Single-line voice note list row.
+   Required context:
+     vn  -- VoiceNote ORM row (attachments may be eager-loaded; not required)
+     tz  -- ZoneInfo for the local display timezone
+
+   Optional context:
+     compact -- bool, default false. When true, hides the secondary meta line.
+
+   Works with the same data structure Track 6B uses for
+   ``todays_voice_notes`` on the Helios overview (a list of ``VoiceNote``
+   ORM rows from ``VoiceNotesRepository.list_in_range``). #}
+{% set text = vn.transcript_text_edited or vn.transcript_text or '' %}
+{% set preview = text[:140] %}
+<li>
+  <a href="/voice-notes/{{ vn.id }}{% if request is defined and request %}?from={{ request.url.path }}{% endif %}"
+     class="block px-5 py-3 hover:bg-gray-50 transition-colors group">
+    <div class="flex items-center gap-2">
+      <svg class="h-4 w-4 text-aegis-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 18.75a6 6 0 006-6v-1.5a.75.75 0 00-1.5 0v1.5a4.5 4.5 0 01-9 0v-1.5a.75.75 0 00-1.5 0v1.5a6 6 0 006 6zm0 0v3m-3 0h6M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z" />
+      </svg>
+      <span class="text-xs font-medium text-gray-500 shrink-0">
+        {% if show_date | default(false) %}{{ vn.started_at.astimezone(tz).strftime('%b %-d, %-I:%M %p').lower() }}{% else %}{{ vn.started_at.astimezone(tz).strftime('%-I:%M %p').lower() }}{% endif %}
+      </span>
+      <p class="text-sm text-gray-900 truncate group-hover:text-aegis-700">
+        {{ preview }}{% if text|length > 140 %}…{% endif %}
+      </p>
+    </div>
+
+    {% if not compact %}
+    <div class="mt-1.5 ml-6 flex flex-wrap items-center gap-1.5">
+      <span class="text-[10px] text-gray-400">{{ (vn.duration_seconds or 0) | round(0) | int }}s</span>
+      <span class="text-[10px] text-gray-400">·</span>
+      <span class="text-[10px] text-gray-400">{{ vn.triggered_by | replace('_', ' ') }}</span>
+      {% if vn.is_excerpt %}
+      <span class="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Excerpt</span>
+      {% endif %}
+      {% if vn.processing_status == 'completed' %}
+      <span class="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">Extracted</span>
+      {% elif vn.processing_status == 'processing' %}
+      <span class="inline-flex items-center rounded-full bg-aegis-50 px-1.5 py-0.5 text-[10px] font-medium text-aegis-700 animate-pulse">Processing</span>
+      {% elif vn.processing_status == 'failed' %}
+      <span class="inline-flex items-center rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">Failed</span>
+      {% elif vn.processing_status == 'pending' %}
+      <span class="inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">Pending</span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </a>
+</li>

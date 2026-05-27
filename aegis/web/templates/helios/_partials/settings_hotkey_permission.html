@@ -1,0 +1,33 @@
+{# Hotkey AX permission result partial. HELIOS.md §13.7. #}
+{% if granted %}
+<div class="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+  Accessibility granted — save the form to register the hotkey.
+</div>
+{% else %}
+<div class="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2">
+  <p class="font-medium">Accessibility permission required.</p>
+  <p>
+    macOS needs Accessibility access for Helios to register a global hotkey.
+    <a class="underline"
+       href="x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+       target="_blank">Open System Settings → Privacy &amp; Security → Accessibility</a>,
+    add Helios, then click below. The toggle will stay disabled until granted.
+  </p>
+  <button type="button"
+          hx-post="/helios/settings/hotkey-permission-check"
+          hx-target="#hotkey-permission-result"
+          hx-swap="innerHTML"
+          class="rounded-md bg-amber-200 px-3 py-1 font-semibold text-amber-900 hover:bg-amber-300">
+    Click here when granted
+  </button>
+</div>
+{# Force-uncheck the toggle if user clicked it without AX granted. The
+   server-side POST handler also drops the field in this state, but
+   this gives immediate UI feedback. #}
+<script>
+  (function(){
+    var cb = document.querySelector('input[name="voice_note.hotkey_enabled"]');
+    if (cb) cb.checked = false;
+  })();
+</script>
+{% endif %}

@@ -1,0 +1,11 @@
+.venv/
+dist/
+build/
+tests/fixtures/audio/*.wav
+tests/fixtures/audio/*.json
+!tests/fixtures/audio/README.md
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.mypy_cache/

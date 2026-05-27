@@ -24,6 +24,12 @@ dependencies = [
     # register_categories(), so banners with Continue/Stop buttons
     # never fire. (See PHASE.md cycle 3 follow-up.)
     "pyobjc-framework-UserNotifications>=10.1",
+    # Vision framework — VNRecognizeTextRequest drives the Phase 5
+    # OCR worker. Same bundling pattern as UserNotifications: without
+    # it, ``import Vision`` inside the bundle raises
+    # ModuleNotFoundError and OcrWorker reports component status
+    # ``unavailable(reason=vision_not_installed)`` for every session.
+    "pyobjc-framework-Vision>=10.1",
     "sounddevice>=0.4",
     "numpy>=1.26",
     "soundfile>=0.12",

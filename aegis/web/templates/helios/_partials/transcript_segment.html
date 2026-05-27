@@ -1,0 +1,23 @@
+{# A single transcript segment with speaker label + text.
+   ``seg`` is the segment dict; ``speaker_display`` is the resolved name
+   (or empty if not resolved); ``inferred`` indicates whether the name
+   came from the §16.4 heuristic. ``session_start_ts`` is the session's
+   ``started_at`` epoch — when present, the segment header shows
+   absolute clock time. Otherwise we fall back to relative seconds. #}
+<div class="flex items-start gap-3 py-2">
+  <div class="w-20 shrink-0 text-xs font-mono text-gray-400">
+    {% if session_start_ts %}
+      {{ (session_start_ts + (seg.get('start') or 0)) | local_dt('%-I:%M:%S %p') }}
+    {% else %}
+      {{ (seg.get('start') or 0) | round(1) }}s
+    {% endif %}
+  </div>
+  <div class="w-32 shrink-0 text-xs font-semibold text-gray-700">
+    {% if speaker_display %}
+      <span class="{% if inferred %}italic{% endif %}">{{ speaker_display }}</span>
+    {% else %}
+      <span class="text-gray-500 font-mono">{{ seg.get('speaker') or 'unknown' }}</span>
+    {% endif %}
+  </div>
+  <p class="flex-1 text-sm text-gray-800 leading-relaxed">{{ seg.get('text', '') }}</p>
+</div>

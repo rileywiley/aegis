@@ -1,0 +1,53 @@
+{# Status pill partial — polled by overview page every 5s.
+   Renders a fragment (no <html> wrapper). #}
+<div id="helios-status-pill"
+     hx-get="/helios/overview/status-partial"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML"
+     class="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
+  {% if not helios_online or not status %}
+    <span class="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+      <span class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
+      Daemon offline
+    </span>
+  {% else %}
+    {% set mode = status.get('mode', 'unknown') %}
+    {% set mode_class = {
+      'armed': 'bg-emerald-50 text-emerald-700',
+      'recording': 'bg-aegis-50 text-aegis-700',
+      'paused': 'bg-amber-50 text-amber-700',
+      'error': 'bg-red-50 text-red-700',
+      'not_running': 'bg-gray-100 text-gray-600',
+    }.get(mode, 'bg-gray-100 text-gray-600') %}
+    {% set dot_class = {
+      'armed': 'bg-emerald-500',
+      'recording': 'bg-aegis-500 animate-pulse',
+      'paused': 'bg-amber-500',
+      'error': 'bg-red-500',
+      'not_running': 'bg-gray-400',
+    }.get(mode, 'bg-gray-400') %}
+    <span class="inline-flex items-center gap-2 rounded-full {{ mode_class }} px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+      <span class="inline-block h-2 w-2 rounded-full {{ dot_class }}"></span>
+      {{ mode }}
+    </span>
+
+    {% set active = status.get('active_session') %}
+    {% if active %}
+    <span class="text-sm text-gray-700">
+      Active session
+      <span class="font-semibold">#{{ active.get('id') }}</span>
+      <span class="text-gray-400">({{ active.get('kind', '') }})</span>
+    </span>
+    {% else %}
+    {% set next_event = status.get('next_calendar_event') %}
+    {% if next_event %}
+    <span class="text-sm text-gray-700">
+      Next: <span class="font-semibold">{{ next_event.get('title', '(untitled)') }}</span>
+    </span>
+    {% else %}
+    <span class="text-sm text-gray-400">Idle — no upcoming events</span>
+    {% endif %}
+    {% endif %}
+  {% endif %}
+  <span class="ml-auto text-xs text-gray-400">{{ current_time }}</span>
+</div>

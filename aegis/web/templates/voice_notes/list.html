@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Aegis — Voice Notes{% endblock %}
+{% block page_title %}Voice Notes{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Voice Notes</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        {{ total }} {{ 'note' if total == 1 else 'notes' }} captured
+      </p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" action="/voice-notes"
+        class="flex flex-col sm:flex-row sm:items-end gap-3 bg-white rounded-xl border border-gray-200 p-4">
+    <div class="w-full sm:w-auto">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Source</label>
+      <select name="triggered_by" onchange="this.form.submit()"
+              class="w-full sm:w-44 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+        <option value="">All sources</option>
+        <option value="menu_bar" {% if filters.triggered_by == 'menu_bar' %}selected{% endif %}>Menu bar</option>
+        <option value="hotkey" {% if filters.triggered_by == 'hotkey' %}selected{% endif %}>Hotkey</option>
+        <option value="dashboard" {% if filters.triggered_by == 'dashboard' %}selected{% endif %}>Dashboard</option>
+      </select>
+    </div>
+
+    <div class="w-full sm:w-auto">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Type</label>
+      <select name="is_excerpt" onchange="this.form.submit()"
+              class="w-full sm:w-44 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+        <option value="">Standalone + excerpts</option>
+        <option value="false" {% if filters.is_excerpt == 'false' %}selected{% endif %}>Standalone</option>
+        <option value="true" {% if filters.is_excerpt == 'true' %}selected{% endif %}>Excerpts only</option>
+      </select>
+    </div>
+
+    <div class="w-full sm:w-auto">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Has attachments</label>
+      <select name="has_attachments" onchange="this.form.submit()"
+              class="w-full sm:w-44 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+        <option value="">Any</option>
+        <option value="true" {% if filters.has_attachments == 'true' %}selected{% endif %}>With attachments</option>
+        <option value="false" {% if filters.has_attachments == 'false' %}selected{% endif %}>Without attachments</option>
+      </select>
+    </div>
+
+    <div class="w-full sm:w-auto">
+      <label class="block text-xs font-medium text-gray-500 mb-1">From</label>
+      <input type="date" name="date_from" value="{{ filters.date_from or '' }}"
+             onchange="this.form.submit()"
+             class="w-full sm:w-40 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+    </div>
+    <div class="w-full sm:w-auto">
+      <label class="block text-xs font-medium text-gray-500 mb-1">To</label>
+      <input type="date" name="date_to" value="{{ filters.date_to or '' }}"
+             onchange="this.form.submit()"
+             class="w-full sm:w-40 rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm text-gray-700 focus:border-aegis-500 focus:outline-none focus:ring-1 focus:ring-aegis-500">
+    </div>
+
+    {% if filters.triggered_by or filters.is_excerpt or filters.has_attachments or filters.date_from or filters.date_to %}
+    <a href="/voice-notes" class="text-xs text-gray-500 hover:text-gray-700 sm:ml-2 sm:self-end sm:pb-2">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- List -->
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    {% if voice_notes %}
+    <ul class="divide-y divide-gray-100">
+      {% for vn in voice_notes %}
+        {% with show_date=true %}
+          {% include "voice_notes/_partials/voice_note_row.html" %}
+        {% endwith %}
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="px-5 py-16 text-center">
+      <svg class="mx-auto h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 18.75a6 6 0 006-6v-1.5a.75.75 0 00-1.5 0v1.5a4.5 4.5 0 01-9 0v-1.5a.75.75 0 00-1.5 0v1.5a6 6 0 006 6zm0 0v3m-3 0h6M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z" />
+      </svg>
+      <p class="mt-3 text-sm text-gray-500">No voice notes match these filters.</p>
+      <p class="mt-1 text-xs text-gray-400">Record a note from the Helios menu bar to see it here.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div class="flex items-center justify-between text-sm text-gray-500">
+    <span>Page {{ page }} of {{ total_pages }}</span>
+    <div class="flex gap-2">
+      {% if page > 1 %}
+      <a href="?{{ querystring_prev }}" class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50">Previous</a>
+      {% endif %}
+      {% if page < total_pages %}
+      <a href="?{{ querystring_next }}" class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-50">Next</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
