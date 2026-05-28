@@ -81,6 +81,22 @@ def _build_sections():
             ],
         ),
         (
+            "LLM Cost Control",
+            (
+                "Gate scheduled LLM jobs (triage, extraction, workstream "
+                "assignment, briefings) to working hours. User-initiated calls "
+                "— chat, voice notes, re-extract — always run regardless."
+            ),
+            [
+                ("llm_work_hours_enabled", "Enable Working-Hours Gate", "When off, scheduled jobs run 24/7 (legacy behavior).", "bool", settings.llm_work_hours_enabled),
+                ("llm_work_hours_start", "Work Hours Start", "Start of the working window (HH:MM, local timezone).", "time", settings.llm_work_hours_start),
+                ("llm_work_hours_end", "Work Hours End", "End of the working window (HH:MM, local timezone).", "time", settings.llm_work_hours_end),
+                ("llm_work_days", "Work Days", "ISO day numbers, comma-separated. Mon=1, Tue=2, …, Sun=7. Default: 1,2,3,4,5 (weekdays).", "text", settings.llm_work_days),
+                ("llm_force_pause", "Force Pause", "Kill switch — overrides the work-hours window and halts all scheduled LLM jobs.", "bool", settings.llm_force_pause),
+                ("llm_force_active", "Force Active (bypass gate)", "Rarely used. Allows scheduled jobs regardless of the clock. Useful for catchup runs.", "bool", settings.llm_force_active),
+            ],
+        ),
+        (
             "Notifications",
             "Toggle notification delivery channels.",
             [
@@ -219,6 +235,10 @@ async def admin_page(request: Request, session: AsyncSession = Depends(get_sessi
     vp_result = await session.execute(vp_stmt)
     voice_profile = vp_result.scalar_one_or_none()
 
+    # Live LLM gate state for the top-of-page pill.
+    from aegis.intelligence.llm_gate import llm_calls_allowed
+    gate_allowed, gate_reason = await llm_calls_allowed(session)
+
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -226,6 +246,8 @@ async def admin_page(request: Request, session: AsyncSession = Depends(get_sessi
             "sections": resolved_sections,
             "voice_profile": voice_profile,
             "current_time": "",
+            "llm_gate_allowed": gate_allowed,
+            "llm_gate_reason": gate_reason,
         },
     )
 

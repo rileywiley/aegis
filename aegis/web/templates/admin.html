@@ -6,6 +6,47 @@
 {% block content %}
 <div class="max-w-4xl mx-auto space-y-6">
 
+  {# ── LLM gate status pill ── #}
+  {% if llm_gate_allowed is not none %}
+  <div class="rounded-xl border {% if llm_gate_allowed %}border-emerald-200 bg-emerald-50{% else %}border-amber-200 bg-amber-50{% endif %} p-4 flex items-center justify-between gap-4">
+    <div>
+      <p class="text-sm font-semibold {% if llm_gate_allowed %}text-emerald-900{% else %}text-amber-900{% endif %}">
+        LLM scheduled jobs: {% if llm_gate_allowed %}active{% else %}paused{% endif %}
+      </p>
+      <p class="text-xs {% if llm_gate_allowed %}text-emerald-700{% else %}text-amber-800{% endif %} mt-0.5">
+        {{ llm_gate_reason }}
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if llm_gate_allowed %}
+      <button type="button"
+              hx-post="/admin/settings"
+              hx-target="#gate-action-result"
+              hx-swap="innerHTML"
+              hx-vals='{"key": "llm_force_pause", "value": "true"}'
+              hx-confirm="Pause all scheduled LLM jobs (triage, extraction, briefings)? User-initiated chat and voice notes are unaffected."
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+        Pause LLM now
+      </button>
+      {% else %}
+      <button type="button"
+              hx-post="/admin/settings"
+              hx-target="#gate-action-result"
+              hx-swap="innerHTML"
+              hx-vals='{"key": "llm_force_pause", "value": "false"}'
+              class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+        Resume
+      </button>
+      {% endif %}
+      <a href="/admin" title="Reload to see updated state"
+         class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-white">
+        Refresh
+      </a>
+      <span id="gate-action-result" class="text-xs"></span>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Settings sections -->
   {% for section in sections %}
   <div x-data="{ open: {{ 'true' if loop.index <= 3 else 'false' }} }"

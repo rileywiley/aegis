@@ -57,16 +57,13 @@ async def load_admin_overrides(session: AsyncSession) -> int:
 
 
 async def bootstrap_admin_settings(session: AsyncSession) -> int:
-    """Pre-populate admin_settings with current config.py values if table is empty.
+    """Pre-populate admin_settings with current config.py values.
 
-    Only runs on first startup when the table is empty.
+    Idempotent: uses ``on_conflict_do_nothing`` so existing keys are
+    preserved. New keys added to the seed map below get auto-backfilled
+    on the next startup — earlier behavior gated on "table empty" which
+    broke that contract once any setting had been saved.
     """
-    # Check if table already has data
-    count_result = await session.execute(text("SELECT COUNT(*) FROM admin_settings"))
-    count = count_result.scalar_one()
-    if count > 0:
-        return 0  # Already populated
-
     settings = get_settings()
 
     # Map of setting key → (value, description)
@@ -117,6 +114,13 @@ async def bootstrap_admin_settings(session: AsyncSession) -> int:
         "readiness_heavy_max": (settings.readiness_heavy_max, "Heavy workload max score"),
         # Meeting
         "meeting_exclusion_keywords": (settings.meeting_exclusion_keywords, "Comma-separated keywords to exclude meetings"),
+        # LLM off-hours cost control (aegis/intelligence/llm_gate.py)
+        "llm_work_hours_enabled": (settings.llm_work_hours_enabled, "Gate scheduled LLM jobs to a working-hours window"),
+        "llm_work_hours_start": (settings.llm_work_hours_start, "Start of working hours (HH:MM, local tz)"),
+        "llm_work_hours_end": (settings.llm_work_hours_end, "End of working hours (HH:MM, local tz)"),
+        "llm_work_days": (settings.llm_work_days, "Work days as ISO numbers (Mon=1..Sun=7), comma-separated"),
+        "llm_force_pause": (settings.llm_force_pause, "Admin kill switch: pause all scheduled LLM jobs"),
+        "llm_force_active": (settings.llm_force_active, "Override gate to allow LLM jobs regardless of clock (rare)"),
     }
 
     inserted = 0

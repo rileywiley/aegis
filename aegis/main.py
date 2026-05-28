@@ -45,6 +45,23 @@ async def _run_processing_cycle(helios_client: HeliosClient | None = None) -> No
     )
     from aegis.processing.workstream_detector import run_workstream_assignment
     from aegis.ingestion.meeting_detector import MeetingDetector
+    from aegis.intelligence.llm_gate import llm_calls_allowed
+    from aegis.db.repositories import upsert_system_health
+
+    # Off-hours gate. When closed, this cycle no-ops — items stay in
+    # ``pending`` state and drain naturally on the next allowed cycle.
+    # User-initiated paths (chat, re-extract, voice notes) bypass this.
+    async with async_session_factory() as session:
+        allowed, reason = await llm_calls_allowed(session)
+        if not allowed:
+            logger.info("processing_cycle_skipped: %s", reason)
+            await upsert_system_health(
+                session,
+                "processing_cycle",
+                status="paused",
+                last_error_message=f"Skipped: {reason}",
+            )
+            return
 
     try:
         # Step 1: Triage new emails + chat messages

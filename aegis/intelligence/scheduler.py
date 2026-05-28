@@ -25,6 +25,7 @@ async def _morning_briefing_job() -> None:
         generate_monday_brief,
         generate_morning_briefing,
     )
+    from aegis.intelligence.llm_gate import llm_calls_allowed
 
     settings = get_settings()
     tz = zoneinfo.ZoneInfo(settings.aegis_timezone)
@@ -32,6 +33,10 @@ async def _morning_briefing_job() -> None:
 
     try:
         async with async_session_factory() as session:
+            allowed, reason = await llm_calls_allowed(session)
+            if not allowed:
+                logger.info("morning_briefing_skipped: %s", reason)
+                return
             if local_now.weekday() == 0:  # Monday
                 logger.info("Monday detected — generating Monday planning brief")
                 await generate_monday_brief(session)
@@ -45,9 +50,14 @@ async def _morning_briefing_job() -> None:
 async def _friday_recap_job() -> None:
     """Friday end-of-week recap job."""
     from aegis.intelligence.briefings import generate_friday_recap
+    from aegis.intelligence.llm_gate import llm_calls_allowed
 
     try:
         async with async_session_factory() as session:
+            allowed, reason = await llm_calls_allowed(session)
+            if not allowed:
+                logger.info("friday_recap_skipped: %s", reason)
+                return
             logger.info("Generating Friday recap")
             await generate_friday_recap(session)
     except Exception:

@@ -116,6 +116,17 @@ class Settings(BaseSettings):
     # ── Org domains ─────────────────────────────────────
     org_email_domains: str = "hawthorneheath.com"  # comma-separated internal domains
 
+    # ── LLM off-hours cost control ───────────────────────
+    # Gates the scheduled `processing_cycle` job + briefing crons to a
+    # working-hours window. User-initiated calls (chat, re-extract,
+    # voice notes) stay ungated. See aegis/intelligence/llm_gate.py.
+    llm_work_hours_enabled: bool = True
+    llm_work_hours_start: str = "08:00"    # local time, HH:MM
+    llm_work_hours_end: str = "18:00"      # local time, HH:MM
+    llm_work_days: str = "1,2,3,4,5"       # ISO day numbers Mon=1..Sun=7
+    llm_force_pause: bool = False          # admin kill switch
+    llm_force_active: bool = False         # bypass gate (rare: stress test / backfill)
+
 
 @lru_cache
 def get_settings() -> Settings:
