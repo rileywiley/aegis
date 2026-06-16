@@ -83,10 +83,24 @@ class GraphClient:
     def __init__(self) -> None:
         settings = get_settings()
         self._cache = _load_msal_cache()
+        # MSAL's silent-refresh path hits ``login.microsoftonline.com``
+        # via the synchronous ``requests`` library. Without an explicit
+        # timeout the call waits for the OS-level TCP timeout (~60s) on
+        # any flaky connection, which blocks the asyncio event loop
+        # — APScheduler then logs "Run time of job was missed by ~1m"
+        # for every queued poller and the processing cycle (see
+        # 2026-06-15/16 calendar poll failures). MSAL's ``timeout``
+        # kwarg is forwarded directly to ``requests`` so a
+        # ``(connect, read)`` tuple gives us the right behavior: fail
+        # fast, let the next poll cycle retry with a fresh attempt.
         self._app = msal.PublicClientApplication(
             client_id=settings.azure_client_id,
             authority=f"https://login.microsoftonline.com/{settings.azure_tenant_id}",
             token_cache=self._cache,
+            timeout=(
+                settings.msal_connect_timeout_seconds,
+                settings.msal_read_timeout_seconds,
+            ),
         )
         self._http = httpx.AsyncClient(timeout=30.0)
 

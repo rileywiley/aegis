@@ -21,12 +21,66 @@ def _make_settings(**overrides):
     defaults = {
         "azure_client_id": "test-client-id",
         "azure_tenant_id": "test-tenant-id",
+        "msal_connect_timeout_seconds": 5.0,
+        "msal_read_timeout_seconds": 15.0,
     }
     defaults.update(overrides)
     mock = MagicMock()
     for k, v in defaults.items():
         setattr(mock, k, v)
     return mock
+
+
+@patch("aegis.ingestion.graph_client.get_settings")
+@patch("aegis.ingestion.graph_client.msal.PublicClientApplication")
+@patch("aegis.ingestion.graph_client._load_msal_cache")
+def test_msal_app_constructed_with_explicit_timeout(
+    mock_cache, mock_msal_cls, mock_settings
+):
+    """GraphClient must pass ``timeout=(connect, read)`` to MSAL.
+
+    Regression guard for the 2026-06-15 calendar_sync outage where
+    MSAL's silent-refresh path hung on login.microsoftonline.com for
+    ~60s (OS-level TCP timeout) and blocked the asyncio event loop —
+    APScheduler logged "Run time of job was missed by 0:01:07" for
+    every queued poller and the processing cycle. MSAL forwards
+    ``timeout`` straight to ``requests``, so a ``(connect, read)``
+    tuple is the canonical fix.
+    """
+    mock_settings.return_value = _make_settings(
+        msal_connect_timeout_seconds=5.0, msal_read_timeout_seconds=15.0
+    )
+    mock_cache.return_value = MagicMock()
+    mock_msal_cls.return_value = MagicMock()
+
+    GraphClient()
+
+    mock_msal_cls.assert_called_once()
+    kwargs = mock_msal_cls.call_args.kwargs
+    assert kwargs.get("timeout") == (5.0, 15.0), (
+        f"MSAL PublicClientApplication must receive a (connect, read) "
+        f"timeout tuple; got {kwargs.get('timeout')!r}"
+    )
+
+
+@patch("aegis.ingestion.graph_client.get_settings")
+@patch("aegis.ingestion.graph_client.msal.PublicClientApplication")
+@patch("aegis.ingestion.graph_client._load_msal_cache")
+def test_msal_timeout_respects_custom_settings(
+    mock_cache, mock_msal_cls, mock_settings
+):
+    """Admin overrides on the timeout fields flow through to MSAL."""
+    mock_settings.return_value = _make_settings(
+        msal_connect_timeout_seconds=2.5,
+        msal_read_timeout_seconds=8.0,
+    )
+    mock_cache.return_value = MagicMock()
+    mock_msal_cls.return_value = MagicMock()
+
+    GraphClient()
+
+    kwargs = mock_msal_cls.call_args.kwargs
+    assert kwargs.get("timeout") == (2.5, 8.0)
 
 
 def _load_fixture(name: str) -> dict:

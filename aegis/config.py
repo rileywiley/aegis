@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     # DEPRECATED: replaced by helios_heartbeat_seconds in Phase 3; will remove in Phase 4
     polling_screenpipe_seconds: int = 300
 
+    # ── MSAL silent-refresh timeouts (seconds) ───────────
+    # Passed straight to the underlying ``requests`` library on every
+    # ``login.microsoftonline.com`` token-refresh call. Without these,
+    # MSAL waits ~60s for OS-level TCP timeout on flaky connections,
+    # blocking the asyncio event loop and starving the pollers.
+    msal_connect_timeout_seconds: float = 5.0
+    msal_read_timeout_seconds: float = 15.0
+
     # ── Intelligence schedule ────────────────────────────
     morning_briefing_time: str = "07:30"
     monday_brief_time: str = "07:30"
